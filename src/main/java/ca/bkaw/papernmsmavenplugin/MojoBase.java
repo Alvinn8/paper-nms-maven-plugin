@@ -540,7 +540,8 @@ public abstract class MojoBase extends AbstractMojo {
             if ("Unfixable conflicts".equals(e.getMessage())) {
                 throw new MojoExecutionException(e.getMessage() +
                     "\nUnable to map the paper jar due to unfixable mapping conflicts. " +
-                    "This is a known issue for non 1.18 versions, sorry!");
+                    "This is a known issue for non 1.18 versions, sorry!" +
+                    "\nSee https://github.com/Alvinn8/paper-nms-maven-plugin/issues/1", e);
             } else {
                 throw e;
             }

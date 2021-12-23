@@ -39,20 +39,22 @@ This plugin will both create the mapped paper dependency and install it to your 
     <version>1.18.1-SNAPSHOT</version>
 </dependency>
 ```
+Change `1.18.1` to the desired version. **Note:** Only 1.18.1 works at the moment.
 4. Reload the project.
+
 ![Press the "Load Maven Changes" button](docs/img/step-3.png)
 A `Cannot resolve ca.bkaw:paper-nms:1.18.1-SNAPSHOT` message is expected.
-5. To create the missing dependency, run `init`.
+6. To create the missing dependency, run `init`.
 ![Instructions for running the paper-nms:init maven goal](docs/img/step-4.png)
 For arrow (4), double-click `paper-nms:init` to run it.
-6. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
-7. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
+7. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
+8. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
 
 ## Issues
 ### Only works for 1.18.x.
-On 1.17.1 unresolvable mapping conflicts occur, if you want to help to try fix the issue, see issue #1.
+On 1.17.1 unresolvable mapping conflicts occur, if you want to help try to fix the issue, see [issue #1](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/1).
 
-On some older spigot versions, mappings use a package rename to avoid having to retype `net/minecraft/server` for every class mapping. See issue #2.
+On some older spigot versions, mappings use a package rename to avoid having to retype `net/minecraft/server` for every class mapping. See [issue #2](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/2).
 
 In the future all versions down to 1.14.4 should be supportable as there are Mojang mappings available since then.
 
