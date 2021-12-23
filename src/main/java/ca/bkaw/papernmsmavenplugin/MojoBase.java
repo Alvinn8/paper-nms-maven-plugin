@@ -78,6 +78,12 @@ public abstract class MojoBase extends AbstractMojo {
 
     // Paths
 
+    /**
+     * Get the directory where mapping files are stored and where temporary files are
+     * created during init.
+     *
+     * @return The path to the cache directory.
+     */
     public Path getCacheDirectory() {
         MavenProject project = this.project.hasParent() ? this.project.getParent() : this.project;
 
@@ -86,6 +92,12 @@ public abstract class MojoBase extends AbstractMojo {
 
     // Getters
 
+    /**
+     * Get the game version the user desires to use for this project.
+     *
+     * @return The game version.
+     * @throws MojoFailureException If no version is found.
+     */
     public String getGameVersion() throws MojoFailureException {
         for (Object object : this.project.getDependencies()) {
             Dependency dependency = (Dependency) object;
@@ -109,30 +121,52 @@ public abstract class MojoBase extends AbstractMojo {
 
     // Utils
 
-    public void downloadFile(String url, Path file) throws MojoExecutionException {
+    /**
+     * Download a file from a URL.
+     *
+     * @param url The url to download the file from.
+     * @param path The path to place the downloaded file.
+     * @throws MojoExecutionException If the download failed.
+     */
+    public void downloadFile(String url, Path path) throws MojoExecutionException {
         try {
             InputStream in = new URL(url).openStream();
-            Files.copy(in, file, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(in, path, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            throw new MojoExecutionException("Failed to download " + file.getFileName(), e);
+            throw new MojoExecutionException("Failed to download " + path.getFileName(), e);
         }
     }
 
-    public void downloadFile(String url, Path file, String sha1) throws MojoExecutionException {
-        this.downloadFile(url, file);
+    /**
+     * Download a file from a URL and validate the SHA-1 hash to ensure the file
+     * downloaded correctly.
+     *
+     * @param url The url to download the file from.
+     * @param path The path to place the downloaded file.
+     * @param sha1 The SHA-1 hash.
+     * @throws MojoExecutionException If the download failed.
+     */
+    public void downloadFile(String url, Path path, String sha1) throws MojoExecutionException {
+        this.downloadFile(url, path);
         MessageDigest messageDigest = this.getSHA1();
         byte[] hash;
         try {
-            hash = messageDigest.digest(Files.readAllBytes(file));
+            hash = messageDigest.digest(Files.readAllBytes(path));
         } catch (IOException e) {
-            throw new MojoExecutionException("Failed to check hash of downloaded file " + file.getFileName(), e);
+            throw new MojoExecutionException("Failed to check hash of downloaded file " + path.getFileName(), e);
         }
         String fileSha1 = this.toHex(hash);
         if (!sha1.equals(fileSha1)) {
-            throw new MojoExecutionException("Download failed, sha1 hash of downloaded file did not match. Expected: " + sha1 + " Found: " + fileSha1 + " for file " + file.getFileName());
+            throw new MojoExecutionException("Download failed, sha1 hash of downloaded file did not match. Expected: " + sha1 + " Found: " + fileSha1 + " for file " + path.getFileName());
         }
     }
 
+    /**
+     * Convert a byte array to a hexadecimal string.
+     *
+     * @param bytes The byte array.
+     * @return The hex string.
+     */
     public String toHex(byte[] bytes) {
         StringBuilder result = new StringBuilder();
         for (byte value : bytes) {
@@ -141,6 +175,12 @@ public abstract class MojoBase extends AbstractMojo {
         return result.toString();
     }
 
+    /**
+     * Get the SHA-1 {@link MessageDigest} and handle errors (that should never occur).
+     *
+     * @return The SHA-1 {@link MessageDigest} instance.
+     * @throws MojoExecutionException If something goes wrong.
+     */
     private MessageDigest getSHA1() throws MojoExecutionException {
         // Should never throw as all Java platforms are required to implement SHA-1
         try {
@@ -150,6 +190,12 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Delete the directory on the path recursively, if the directory exists.
+     *
+     * @param path The path to the directory.
+     * @throws IOException If something goes wrong.
+     */
     public void deleteRecursively(Path path) throws IOException {
         if (!Files.exists(path)) return;
 
@@ -180,6 +226,13 @@ public abstract class MojoBase extends AbstractMojo {
 
     // Init
 
+    /**
+     * Initialize paper-nms. Will create a Mojang mapped paper dependency and install
+     * it into the local repository.
+     *
+     * @throws MojoExecutionException If something goes wrong.
+     * @throws MojoFailureException If something goes wrong.
+     */
     public void init() throws MojoExecutionException, MojoFailureException {
         String gameVersion = this.getGameVersion();
         Path cacheDirectory = this.getCacheDirectory();
@@ -218,9 +271,17 @@ public abstract class MojoBase extends AbstractMojo {
 
         getLog().info("Installing into local maven repository");
         Path pomPath = cacheDirectory.resolve("pom.xml");
-        this.installToMavenRepo(gameVersion, cacheDirectory, paperclipPath, mappedPaperPath, pomPath);
+        this.installToMavenRepo(gameVersion, paperclipPath, mappedPaperPath, pomPath);
     }
 
+    /**
+     * Download the Mojang mappings for the specified game version.
+     *
+     * @param mojangMappingsPath The path to put the Mojang mappings.
+     * @param gameVersion The game version.
+     * @throws MojoFailureException If something goes wrong.
+     * @throws MojoExecutionException If something goes wrong.
+     */
     public void downloadMojangMappings(Path mojangMappingsPath, String gameVersion) throws MojoFailureException, MojoExecutionException {
         try {
             getLog().info("Downloading version manifest");
@@ -260,6 +321,17 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Download the Spigot mappings for the specified game version.
+     *
+     * <p>Note that the member mappings might not exist, and in that case
+     * the {@code spigotMemberMappingsPath} file won't exist.</p>
+     *
+     * @param spigotClassMappingsPath The path to put the class mappings.
+     * @param spigotMemberMappingsPath The path to put the member mappings.
+     * @param gameVersion The game version.
+     * @throws MojoExecutionException If something goes wrong.
+     */
     public void downloadSpigotMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, String gameVersion) throws MojoExecutionException {
         getLog().info("Downloading spigot version info");
         InputStream inputStream;
@@ -280,7 +352,8 @@ public abstract class MojoBase extends AbstractMojo {
         this.downloadFile(memberMappingsUrl, spigotMemberMappingsPath);
 
         // New versions don't have member mappings. If no member mappings exist we are
-        // redirected to a login page.
+        // redirected to a login page. Detect the html tag or doctype and in that case
+        // delete the member mappings file as it is not mappings, but an HTML page.
         try {
             BufferedReader bufferedReader = Files.newBufferedReader(spigotMemberMappingsPath);
             String s = bufferedReader.readLine();
@@ -293,6 +366,17 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Merge the spigot mappings and the Mojang mappings to create mappings from
+     * Spigot mappings to Mojang mappings, and write the mappings to a file in the
+     * tiny format.
+     *
+     * @param spigotClassMappingsPath The path of the Spigot class mappings (csrg).
+     * @param spigotMemberMappingsPath The path of the Spigot member mappings (csrg).
+     * @param mojangMappingsPath The path of the mojang mappings (proguard).
+     * @param outputPath The path to put the merged mappings (tiny).
+     * @throws MojoExecutionException If something goes wrong.
+     */
     public void mergeMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, Path mojangMappingsPath, Path outputPath) throws MojoExecutionException {
         MappingSet spigotMappings;
         MappingSet mojangMappings;
@@ -314,6 +398,7 @@ public abstract class MojoBase extends AbstractMojo {
         } else {
             spigotMappings = spigotClassMappings;
         }
+
         try {
             mojangMappings = new ProGuardReader(Files.newBufferedReader(mojangMappingsPath)).read();
         } catch (IOException e) {
@@ -338,16 +423,23 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Download a paperclip jar of the latest build for the specified game version.
+     *
+     * @param gameVersion The game version.
+     * @param paperclipPath The path to put the paperclip path.
+     * @throws MojoExecutionException If something goes wrong.
+     */
     public void downloadPaper(String gameVersion, Path paperclipPath) throws MojoExecutionException {
         getLog().info("Fetching latest paper version");
 
-        InputStream input;
+        InputStream inputStream;
         try {
-            input = new URL("https://papermc.io/api/v2/projects/paper/versions/" + gameVersion).openStream();
+            inputStream = new URL("https://papermc.io/api/v2/projects/paper/versions/" + gameVersion).openStream();
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to download paper builds", e);
         }
-        JSONObject json = new JSONObject(new JSONTokener(input));
+        JSONObject json = new JSONObject(new JSONTokener(inputStream));
         JSONArray builds = json.getJSONArray("builds");
         int highestBuild = -1;
         for (int i = 0; i < builds.length(); i++) {
@@ -363,6 +455,22 @@ public abstract class MojoBase extends AbstractMojo {
         this.downloadFile("https://papermc.io/api/v2/projects/paper/versions/" + gameVersion + "/builds/" + highestBuild + "/downloads/paper-" + gameVersion + "-" + highestBuild + ".jar", paperclipPath);
     }
 
+    /**
+     * Extract the paper jar from the downloaded paperclip jar. Depending on the
+     * version, the extracted paper jar might have all dependencies shaded or not.
+     *
+     * <p>If the dependencies are not shaded, a list of dependencies can then be found
+     * inside the META-INF/libraries.list file inside the paperclip jar.</p>
+     *
+     * <p>This method will also clean up the directories that paperclip generate in
+     * the cache folder.</p>
+     *
+     * @param gameVersion The game version.
+     * @param cacheDirectory The cache directory.
+     * @param paperPath The path to put the extracted paper jar.
+     * @throws MojoExecutionException If something goes wrong.
+     * @throws MojoFailureException If something goes wrong.
+     */
     public void extractPaperJar(String gameVersion, Path cacheDirectory, Path paperPath) throws MojoExecutionException, MojoFailureException {
         String javaExecutable;
         Path bin = Paths.get(System.getProperty("java.home"), "bin");
@@ -484,6 +592,7 @@ public abstract class MojoBase extends AbstractMojo {
         remapper.readInputs(in);
 
         // Create output jar
+        Files.deleteIfExists(out);
         URI uri = new URI("jar:" + out.toUri());
         Map<String, Object> env = new HashMap<>();
         env.put("create", true);
@@ -531,6 +640,14 @@ public abstract class MojoBase extends AbstractMojo {
         outputFileSystem.close();
     }
 
+    /**
+     * Map the paper jar to create a Mojang mapped paper jar.
+     *
+     * @param mappingsPath The path to the mappings.
+     * @param paperPath The path to the paper jar.
+     * @param mappedPaperPath The path to put the mapped paper jar.
+     * @throws MojoExecutionException If something goes wrong.
+     */
     public void mapPaperJar(Path mappingsPath, Path paperPath, Path mappedPaperPath) throws MojoExecutionException {
         try {
             mapJar(paperPath, mappedPaperPath, mappingsPath, "spigot", "mojang");
@@ -555,7 +672,25 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
-    public void installToMavenRepo(String gameVersion, Path cacheDirectory, Path paperclipPath, Path mappedPaperPath, Path pomPath) throws MojoExecutionException {
+    /**
+     * Install the mapped paper jar to the local maven repository.
+     *
+     * <p>Will install with the artifact id {@code ca.bkaw}, the artifact id
+     * {@code paper-nms} and the version {@code gameVersion-SNAPSHOT} where
+     * {@code gameVersion} is replaced with the game version.</p>
+     *
+     * <p>A pom will be generated and installed with the artifact.</p>
+     *
+     * <p>The paperclip jar will be searched for the META-INF/libraries.list file
+     * and if it is found it will be used to populate the dependencies for the pom.</p>
+     *
+     * @param gameVersion The game version.
+     * @param paperclipPath The path to paperclip.
+     * @param mappedPaperPath The path to the mapped paper jar to install.
+     * @param pomPath The path to the pom file that will be generated.
+     * @throws MojoExecutionException If something goes wrong.
+     */
+    public void installToMavenRepo(String gameVersion, Path paperclipPath, Path mappedPaperPath, Path pomPath) throws MojoExecutionException {
         StringBuilder pom = new StringBuilder()
             .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             .append("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\" xmlns=\"http://maven.apache.org/POM/4.0.0\"\n")
@@ -639,6 +774,19 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Install the mapped paper jar into the local repository by using the
+     * {@link ArtifactInstaller}.
+     *
+     * <p>Will install with the artifact id {@code ca.bkaw}, the artifact id
+     * {@code paper-nms} and the version {@code gameVersion-SNAPSHOT} where
+     * {@code gameVersion} is replaced with the game version.</p>
+     *
+     * @param artifactPath The path to the artifact to install.
+     * @param pomPath The path to the pom to install with it.
+     * @param gameVersion The game version.
+     * @throws ArtifactInstallationException If something goes wrong.
+     */
     private void installViaArtifactInstaller(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
         Artifact artifact = this.artifactFactory.createArtifactWithClassifier("ca.bkaw", "paper-nms", gameVersion + "-SNAPSHOT", "jar", null);
 
@@ -649,6 +797,19 @@ public abstract class MojoBase extends AbstractMojo {
         this.artifactInstaller.install(artifactPath.toFile(), artifact, this.localRepository);
     }
 
+    /**
+     * Install an artifact into the local repository by running the
+     * {@code install:install-file} goal using the maven command line.
+     *
+     * <p>This method is not used but exists as an alternate way to install the mapped
+     * paper jar. Not really sure why I kept it.</p>
+     *
+     * @param artifactPath The path to the artifact to install.
+     * @param pomPath The path to the pom file to install with it.
+     * @throws ArtifactInstallationException If something goes wrong.
+     * @throws IOException If something goes wrong.
+     * @throws InterruptedException If something goes wrong.
+     */
     private void installViaCmd(Path artifactPath, Path pomPath) throws ArtifactInstallationException, IOException, InterruptedException {
         String mvn = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
         int exitCode = new ProcessBuilder(mvn, "-version").start().waitFor();
@@ -662,11 +823,24 @@ public abstract class MojoBase extends AbstractMojo {
         }
     }
 
+    /**
+     * Install the mapped paper jar into the local repository by copying the files to
+     * the expected path in the local repository.
+     *
+     * <p>This method is not used but exists as an alternate way to install the mapped
+     * paper jar. Not really sure why I kept it.</p>
+     *
+     * @param artifactPath The path to the artifact to install.
+     * @param pomPath The path to the pom to install with it.
+     * @param gameVersion The game version.
+     * @throws ArtifactInstallationException If something goes wrong.
+     */
     private void installViaCopy(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
         Path basePath = Paths.get(this.localRepository.getBasedir(), "ca", "bkaw", "paper-nms", gameVersion + "-SNAPSHOT");
 
-        Path repoArtifactPath = basePath.resolve("paper-nms-" + gameVersion + "-SNAPSHOT.jar");
-        Path repoPomPath = basePath.resolve("paper-nms-" + gameVersion + "-SNAPSHOT.pom");
+        String artifactName = "paper-nms-" + gameVersion + "-SNAPSHOT";
+        Path repoArtifactPath = basePath.resolve(artifactName + ".jar");
+        Path repoPomPath = basePath.resolve(artifactName + ".pom");
 
         try {
             Files.copy(artifactPath, repoArtifactPath, StandardCopyOption.REPLACE_EXISTING);
