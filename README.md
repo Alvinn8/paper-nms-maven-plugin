@@ -9,6 +9,7 @@ This plugin will both create the mapped paper dependency and install it to your 
 
 ## Usage (IntelliJ)
 1. Add `.paper-nms` to your `.gitignore`.
+
 2. Add the plugin to your `pom.xml`:
 ```xml
 <build>
@@ -31,7 +32,8 @@ This plugin will both create the mapped paper dependency and install it to your 
     </plugins>
 </build>
 ```
-3. Add the mojang mapped dependency to your `pom.xml`:
+
+3. Add the mojang mapped dependency to your `pom.xml`.
 ```xml
 <dependency>
     <groupId>ca.bkaw</groupId>
@@ -39,16 +41,22 @@ This plugin will both create the mapped paper dependency and install it to your 
     <version>1.18.1-SNAPSHOT</version>
 </dependency>
 ```
+
 Change `1.18.1` to the desired version. **Note:** Only 1.18.1 works at the moment.
+
 4. Reload the project.
 
 ![Press the "Load Maven Changes" button](docs/img/step-3.png)
+
 A `Cannot resolve ca.bkaw:paper-nms:1.18.1-SNAPSHOT` message is expected.
-6. To create the missing dependency, run `init`.
+
+5. To create the missing dependency, run `init`.
 ![Instructions for running the paper-nms:init maven goal](docs/img/step-4.png)
 For arrow (4), double-click `paper-nms:init` to run it.
-7. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
-8. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
+
+6. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
+
+7. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
 
 ## Issues
 ### Only works for 1.18.x.
