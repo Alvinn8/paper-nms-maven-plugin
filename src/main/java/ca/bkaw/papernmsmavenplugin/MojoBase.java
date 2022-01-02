@@ -9,6 +9,11 @@ import org.apache.maven.artifact.factory.ArtifactFactory;
 import org.apache.maven.artifact.installer.ArtifactInstallationException;
 import org.apache.maven.artifact.installer.ArtifactInstaller;
 import org.apache.maven.artifact.repository.ArtifactRepository;
+import org.apache.maven.artifact.repository.ArtifactRepositoryPolicy;
+import org.apache.maven.artifact.repository.MavenArtifactRepository;
+import org.apache.maven.artifact.repository.layout.DefaultRepositoryLayout;
+import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
+import org.apache.maven.artifact.resolver.ArtifactResolutionException;
 import org.apache.maven.artifact.resolver.ArtifactResolver;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
@@ -25,6 +30,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import javax.annotation.Nullable;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -45,6 +51,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
@@ -246,32 +253,140 @@ public abstract class MojoBase extends AbstractMojo {
             throw new MojoExecutionException("Failed to create .paper-nms cache folder.", e);
         }
 
-        Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
-        this.downloadMojangMappings(mojangMappingsPath, gameVersion);
-
-        getLog().info("Downloading spigot mappings");
-        Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings_"+ gameVersion +".csrg");
-        Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
-        this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
-
-        getLog().info("Merging mappings");
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
-        this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath);
-
-        Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
-        this.downloadPaper(gameVersion, paperclipPath);
-
-        getLog().info("Extracting paper");
-        Path paperPath = cacheDirectory.resolve("paper.jar");
-        this.extractPaperJar(gameVersion, cacheDirectory, paperPath);
-
-        getLog().info("Mapping paper jar");
         Path mappedPaperPath = cacheDirectory.resolve("mapped_paper_"+ gameVersion +".jar");
-        this.mapPaperJar(mappingsPath, paperPath, mappedPaperPath);
+        List<String> dependencyCoordinates = new ArrayList<>();
+
+        getLog().info("Downloading dev-bundle");
+        Path devBundlePath = this.resolveDevBundle(gameVersion);
+
+        if (devBundlePath != null) {
+            getLog().info("Extracting dev-bundle");
+            Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
+            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates);
+
+            getLog().info("Extracting paper");
+            this.extractPaperJar(gameVersion, cacheDirectory, mappedPaperPath);
+        } else {
+            // No dev-bundle exists for this version, let's create
+            // mappings and map the jar manually.
+
+            Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
+            this.downloadMojangMappings(mojangMappingsPath, gameVersion);
+
+            getLog().info("Downloading spigot mappings");
+            Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings_"+ gameVersion +".csrg");
+            Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
+            this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
+
+            getLog().info("Merging mappings");
+            this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath);
+
+            Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
+            this.downloadPaper(gameVersion, paperclipPath);
+
+            getLog().info("Extracting paper");
+            Path paperPath = cacheDirectory.resolve("paper.jar");
+            this.extractPaperJar(gameVersion, cacheDirectory, paperPath);
+
+            getLog().info("Mapping paper jar");
+            this.mapPaperJar(mappingsPath, paperPath, mappedPaperPath);
+        }
 
         getLog().info("Installing into local maven repository");
         Path pomPath = cacheDirectory.resolve("pom.xml");
-        this.installToMavenRepo(gameVersion, paperclipPath, mappedPaperPath, pomPath);
+        this.installToMavenRepo(gameVersion, dependencyCoordinates, mappedPaperPath, pomPath);
+    }
+
+    /**
+     * Resolve the paper dev-bundle containing useful files and get the path to it.
+     *
+     * <p>For versions that do not have a dev-bundle, null is returned.</p>
+     *
+     * @param gameVersion The game version of the dev-bundle to download.
+     * @return The path of the dev-bundle, or null if no dev-bundle was found.
+     */
+    @Nullable
+    public Path resolveDevBundle(String gameVersion) {
+        Artifact artifact = this.artifactFactory.createArtifactWithClassifier(
+            "io.papermc.paper",
+            "dev-bundle",
+            gameVersion + "-R0.1-SNAPSHOT",
+            "zip",
+            null // classifier
+        );
+
+        MavenArtifactRepository paperRepo = new MavenArtifactRepository(
+            "papermc",
+            "https://papermc.io/repo/repository/maven-public/",
+            new DefaultRepositoryLayout(),
+            new ArtifactRepositoryPolicy(),
+            new ArtifactRepositoryPolicy()
+        );
+
+        List<ArtifactRepository> repositories = new ArrayList<>();
+        repositories.add(paperRepo);
+
+        try {
+            this.artifactResolver.resolve(artifact, repositories, this.localRepository);
+        } catch (ArtifactResolutionException | ArtifactNotFoundException e) {
+            getLog().info("No dev bundle was found for version " + gameVersion);
+            return null;
+        }
+
+        return artifact.getFile().toPath();
+    }
+
+    /**
+     * Extract the needed files from the dev bundle. Will extract the mapped paperclip
+     * jar and the mappings.
+     *
+     * <p>The {@code dependencyCoordinates} list will be populated if the dev bundle
+     * is of a data version where the server dependencies are not included in the
+     * server jar (1.18+).</p>
+     *
+     * @param paperclipPath The path to put the mapped paperclip jar.
+     * @param mappingsPath The path to put the extracted mappings.
+     * @param devBundlePath The path to the dev bundle.
+     * @param dependencyCoordinates The mutable list of dependency artifact coordinates.
+     * @throws MojoExecutionException If something goes wrong.
+     * @throws MojoFailureException If something goes wrong.
+     */
+    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates) throws MojoExecutionException, MojoFailureException {
+        try {
+            URI uri = new URI("jar:" + devBundlePath.toUri());
+            FileSystem devBundle = FileSystems.newFileSystem(uri, new HashMap<>());
+
+            int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
+
+            if (dataVersion != 3 && dataVersion != 2) {
+                getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
+                    " but only 2 and 3 are supported. Things may not work properly. If problems occur, try" +
+                    " updating the maven plugin to a newer version if that exists.");
+            }
+
+            JSONObject config = new JSONObject(new JSONTokener(Files.newInputStream(devBundle.getPath("config.json"))));
+            JSONObject buildData = config.getJSONObject("buildData");
+
+            if (dataVersion >= 3) {
+                // Dependencies only need to be added for 1.18+ where they are not in the jar
+                for (Object runtimeDependency : buildData.getJSONArray("runtimeDependencies")) {
+                    dependencyCoordinates.add(String.valueOf(runtimeDependency));
+                }
+                // The API is not in the runtimeDependencies array
+                dependencyCoordinates.add(config.getString("apiCoordinates"));
+                dependencyCoordinates.add(config.getString("mojangApiCoordinates"));
+            }
+
+            Path bundleMappingsPath = devBundle.getPath(buildData.getString("reobfMappingsFile"));
+            Path bundlePaperclipPath = devBundle.getPath(buildData.getString("mojangMappedPaperclipFile"));
+
+            Files.copy(bundleMappingsPath, mappingsPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(bundlePaperclipPath, paperclipPath, StandardCopyOption.REPLACE_EXISTING);
+
+        } catch (URISyntaxException | IOException e) {
+            throw new MojoExecutionException("Failed to extract dev-bundle files.", e);
+        }
     }
 
     /**
@@ -431,7 +546,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @throws MojoExecutionException If something goes wrong.
      */
     public void downloadPaper(String gameVersion, Path paperclipPath) throws MojoExecutionException {
-        getLog().info("Fetching latest paper version");
+        getLog().info("Fetching latest paper build");
 
         InputStream inputStream;
         try {
@@ -555,8 +670,7 @@ public abstract class MojoBase extends AbstractMojo {
 
         getLog().info("Cleaning up paperclip");
         try {
-            // We must keep the paperclip.jar so that libraries can be read from it
-            // when creating a pom
+            Files.delete(cacheDirectory.resolve("paperclip.jar"));
 
             // Folders created by Paperclip
             deleteRecursively(cacheDirectory.resolve("cache"));
@@ -681,16 +795,17 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * <p>A pom will be generated and installed with the artifact.</p>
      *
-     * <p>The paperclip jar will be searched for the META-INF/libraries.list file
-     * and if it is found it will be used to populate the dependencies for the pom.</p>
+     * <p>If the dependencyCoordinates list is provided (not empty) it will be
+     * used to populate the dependencies for the pom. If it is not provided no
+     * repositories nor dependencies will be added.</p>
      *
      * @param gameVersion The game version.
-     * @param paperclipPath The path to paperclip.
+     * @param dependencyCoordinates A list of coordinates of dependencies.
      * @param mappedPaperPath The path to the mapped paper jar to install.
      * @param pomPath The path to the pom file that will be generated.
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void installToMavenRepo(String gameVersion, Path paperclipPath, Path mappedPaperPath, Path pomPath) throws MojoExecutionException {
+    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, Path mappedPaperPath, Path pomPath) throws MojoExecutionException {
         StringBuilder pom = new StringBuilder()
             .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             .append("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\" xmlns=\"http://maven.apache.org/POM/4.0.0\"\n")
@@ -700,53 +815,40 @@ public abstract class MojoBase extends AbstractMojo {
             .append("  <artifactId>paper-nms</artifactId>\n")
             .append("  <version>").append(gameVersion).append("-SNAPSHOT</version>\n");
 
-        // Find dependencies
-        try {
-            FileSystem fileSystem = FileSystems.newFileSystem(paperclipPath, (ClassLoader) null);
-            Path librariesPath = fileSystem.getPath("META-INF", "libraries.list");
-            if (Files.exists(librariesPath)) {
-                pom.append("\n");
-                pom.append("<repositories>\n");
-                pom.append("<repository>\n");
-                pom.append("    <id>papermc</id>\n");
-                pom.append("    <url>https://papermc.io/repo/repository/maven-public/</url>\n");
-                pom.append("</repository>\n");
-                pom.append("<repository>\n");
-                pom.append("    <id>minecraft-libraries</id>\n");
-                pom.append("    <name>Minecraft Libraries</name>\n");
-                pom.append("    <url>https://libraries.minecraft.net</url>\n");
-                pom.append("</repository>\n");
-                pom.append("<repository>\n");
-                pom.append("    <id>fabric</id>\n");
-                pom.append("    <url>https://maven.fabricmc.net</url>\n");
-                pom.append("</repository>\n");
-                pom.append("</repositories>\n");
-                pom.append("\n");
-                pom.append("  <dependencies>\n");
-                for (String line : Files.readAllLines(librariesPath)) {
-                    // hash    groupId:artifactId:version    path
-                    String[] parts1 = line.split("\t");
-                    String[] parts2 = parts1[1].split(":");
-                    String groupId = parts2[0];
-                    String artifactId = parts2[1];
-                    String version = parts2[2];
+        // Add dependencies
+        if (!dependencyCoordinates.isEmpty()) {
+            pom.append("\n");
+            pom.append("<repositories>\n");
+            pom.append("<repository>\n");
+            pom.append("    <id>papermc</id>\n");
+            pom.append("    <url>https://papermc.io/repo/repository/maven-public/</url>\n");
+            pom.append("</repository>\n");
+            pom.append("<repository>\n");
+            pom.append("    <id>minecraft-libraries</id>\n");
+            pom.append("    <name>Minecraft Libraries</name>\n");
+            pom.append("    <url>https://libraries.minecraft.net</url>\n");
+            pom.append("</repository>\n");
+            pom.append("<repository>\n");
+            pom.append("    <id>fabric</id>\n");
+            pom.append("    <url>https://maven.fabricmc.net</url>\n");
+            pom.append("</repository>\n");
+            pom.append("</repositories>\n");
+            pom.append("\n");
+            pom.append("  <dependencies>\n");
+            for (String dependency : dependencyCoordinates) {
+                // groupId:artifactId:version
+                String[] coordinates = dependency.split(":");
+                String groupId = coordinates[0];
+                String artifactId = coordinates[1];
+                String version = coordinates[2];
 
-                    pom.append("<dependency>\n");
-                    pom.append("    <groupId>").append(groupId).append("</groupId>\n");
-                    pom.append("    <artifactId>").append(artifactId).append("</artifactId>\n");
-                    pom.append("    <version>").append(version).append("</version>\n");
-                    pom.append("</dependency>\n");
-                }
-                pom.append("  </dependencies>\n");
+                pom.append("<dependency>\n");
+                pom.append("    <groupId>").append(groupId).append("</groupId>\n");
+                pom.append("    <artifactId>").append(artifactId).append("</artifactId>\n");
+                pom.append("    <version>").append(version).append("</version>\n");
+                pom.append("</dependency>\n");
             }
-        } catch (IOException e) {
-            throw new MojoExecutionException("Failed to read paperclip jar to find dependencies", e);
-        }
-
-        try {
-            Files.delete(paperclipPath);
-        } catch (IOException e) {
-            throw new MojoExecutionException("Failed to delete paperclip");
+            pom.append("  </dependencies>\n");
         }
 
         pom.append("</project>\n");

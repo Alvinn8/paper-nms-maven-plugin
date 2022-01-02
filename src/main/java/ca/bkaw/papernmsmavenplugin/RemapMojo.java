@@ -9,6 +9,7 @@ import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
@@ -26,6 +27,9 @@ public class RemapMojo extends MojoBase {
         Path cacheDirectory = this.getCacheDirectory();
         Path outputPath = cacheDirectory.resolve("remapped.jar");
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
+
+        String mappingFrom = "mojang";
+        String mappingTo = "spigot";
 
         List<Path> classPath = new ArrayList<>();
 
@@ -51,13 +55,25 @@ public class RemapMojo extends MojoBase {
         }
 
         try {
+            BufferedReader bufferedReader = Files.newBufferedReader(mappingsPath);
+            String line = bufferedReader.readLine();
+            bufferedReader.close();
+            // If the dev bundle is used, there are also yarn parameter mappings
+            if (line.contains("mojang+yarn")) {
+                mappingFrom = "mojang+yarn";
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Failed to check the mappings namespace.", e);
+        }
+
+        try {
             Files.deleteIfExists(outputPath);
         } catch (IOException e) {
             throw new MojoExecutionException("IOException " + e.getMessage(), e);
         }
 
         try {
-            this.mapJar(artifactPath, outputPath, mappingsPath, "mojang", "spigot", classPath.toArray(new Path[0]));
+            this.mapJar(artifactPath, outputPath, mappingsPath, mappingFrom, mappingTo, classPath.toArray(new Path[0]));
         } catch (IOException | URISyntaxException e) {
             throw new MojoExecutionException("Failed to remap artifact", e);
         }
