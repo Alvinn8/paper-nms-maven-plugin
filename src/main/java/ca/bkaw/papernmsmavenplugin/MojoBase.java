@@ -121,6 +121,7 @@ public abstract class MojoBase extends AbstractMojo {
             "\n    <groupId>ca.bkaw</groupId>" +
             "\n    <artifactId>paper-nms</artifactId>" +
             "\n    <version>1.18.1-SNAPSHOT</version>" +
+            "\n    <scope>provided</scope>" +
             "\n</dependency>" +
             "\n" +
             "\n Replacing \"1.18.1\" with the desired version.");
@@ -638,7 +639,10 @@ public abstract class MojoBase extends AbstractMojo {
                                 "\n  <maven.compiler.target>"+ number +"</maven.compiler.target>" +
                                 "\n</properties>" +
                                 "\n" +
-                                "\nOr make sure the project is running Java " + number + " by going to Project Structure.");
+                                "\nOr make sure the project is running Java " + number + " by going to Project Structure." +
+                                "\n" +
+                                "\nThis is only required for paper-nms:init, the java version can be downgraded again afterwards if desired."
+                            );
                         } else {
                             throw new MojoExecutionException("Paperclip failed due to an outdated Java version." +
                                 "\nPaperclip failed due to an outdated Java version." +

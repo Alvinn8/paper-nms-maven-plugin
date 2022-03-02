@@ -18,10 +18,10 @@ Although you probably want to use Gradle and [paperweight-userdev](https://githu
         <plugin>
             <groupId>ca.bkaw</groupId>
             <artifactId>paper-nms-maven-plugin</artifactId>
-            <version>1.0</version>
+            <version>1.1</version>
             <executions>
                 <execution>
-                    <phase>package</phase>
+                    <phase>process-classes</phase>
                     <goals>
                         <goal>remap</goal>
                     </goals>
@@ -39,10 +39,11 @@ Although you probably want to use Gradle and [paperweight-userdev](https://githu
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms</artifactId>
     <version>1.18.1-SNAPSHOT</version>
+    <scope>provided</scope>
 </dependency>
 ```
 
-Change `1.18.1` to the desired version. **Note:** Only 1.18.1 works at the moment.
+Change `1.18.1` to the desired version.
 
 4. Reload the project.
 

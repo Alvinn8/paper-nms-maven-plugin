@@ -1,5 +1,8 @@
 package ca.bkaw.papernmsmavenplugin;
 
+import net.fabricmc.tinyremapper.IMappingProvider;
+import net.fabricmc.tinyremapper.TinyRemapper;
+import net.fabricmc.tinyremapper.TinyUtils;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
 import org.apache.maven.artifact.resolver.ArtifactResolutionException;
@@ -11,6 +14,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,11 +25,10 @@ import java.util.List;
 public class RemapMojo extends MojoBase {
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        Path artifactPath = this.project.getArtifact().getFile().toPath();
+        Path inputPath = this.project.getArtifact().getFile().toPath();
 
         String gameVersion = this.getGameVersion();
         Path cacheDirectory = this.getCacheDirectory();
-        Path outputPath = cacheDirectory.resolve("remapped.jar");
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
 
         String mappingFrom = "mojang";
@@ -66,6 +69,49 @@ public class RemapMojo extends MojoBase {
             throw new MojoExecutionException("Failed to check the mappings namespace.", e);
         }
 
+        if (Files.isDirectory(inputPath)) {
+            // A directory, we are before the package stage, we need to remap the classes
+            getLog().info("Remapping classes");
+            this.remapClasses(inputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+        } else {
+            // A file, we are at the package stage, we need to remap the jar
+            Path outputPath = cacheDirectory.resolve("remapped.jar");
+            getLog().info("Remapping artifact");
+            this.remapArtifact(inputPath, outputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+        }
+    }
+
+    public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) {
+        // Read the mappings
+        IMappingProvider mappings = TinyUtils.createTinyMappingProvider(mappingsPath, mappingFrom, mappingTo);
+
+        // Create the remapper
+        TinyRemapper remapper = TinyRemapper.newRemapper()
+            .withMappings(mappings)
+            .ignoreConflicts(true)
+            .build();
+
+        // Add the class path
+        remapper.readClassPath(classPath.toArray(new Path[0]));
+
+        // Add input classes
+        remapper.readInputs(classesPath);
+
+        // Run the remapper and write classes
+        remapper.apply((name, bytes) -> {
+            try {
+                Path path = classesPath.resolve(name + ".class");
+                Files.write(path, bytes);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to write class " + name, e);
+            }
+        });
+
+        // Finish up tiny-remapper
+        remapper.finish();
+    }
+
+    public void remapArtifact(Path artifactPath, Path outputPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) throws MojoExecutionException {
         try {
             Files.deleteIfExists(outputPath);
         } catch (IOException e) {
