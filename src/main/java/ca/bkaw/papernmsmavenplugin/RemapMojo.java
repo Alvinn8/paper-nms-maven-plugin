@@ -14,6 +14,7 @@ import org.apache.maven.plugins.annotations.Mojo;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
@@ -69,6 +70,42 @@ public class RemapMojo extends MojoBase {
             throw new MojoExecutionException("Failed to check the mappings namespace.", e);
         }
 
+        // Tiny remapper is sometimes very verbose about mapping conflicts for older
+        // versions where the mappings were created manually by this plugin.
+        // We therefore silence the messages. Tiny remapper uses the plain System.out
+        // for these messages, so we filter them by changing the System.out.
+        PrintStream normalOut = System.out;
+        System.setOut(new PrintStream(normalOut) {
+            private int count;
+
+            @Override
+            public PrintStream printf(String format, Object... args) {
+                // Don't print the verbose output
+                if (format.contains(" -> ")) {
+                    count++;
+                    return this;
+                }
+                return super.printf(format, args);
+            }
+
+            @Override
+            public void println(String x) {
+                // Don't print the verbose output
+                if (x.contains("fixable: replaced with")) {
+                    count++;
+                    return;
+                }
+                // Replace with the amount of suppressed lines
+                if (x.contains("%count%")) {
+                    if (count <= 0) {
+                        return;
+                    }
+                    x = x.replace("%count%", String.valueOf(count));
+                }
+                super.println(x);
+            }
+        });
+
         if (Files.isDirectory(inputPath)) {
             // A directory, we are before the package stage, we need to remap the classes
             getLog().info("Remapping classes");
@@ -79,6 +116,9 @@ public class RemapMojo extends MojoBase {
             getLog().info("Remapping artifact");
             this.remapArtifact(inputPath, outputPath, mappingsPath, mappingFrom, mappingTo, classPath);
         }
+
+        System.out.println("/ %count% suppressed lines /");
+        System.setOut(normalOut);
     }
 
     public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) {

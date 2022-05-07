@@ -523,6 +523,8 @@ public abstract class MojoBase extends AbstractMojo {
 
         MappingSet mappings = spigotMappings.reverse().merge(mojangMappings.reverse());
 
+        this.fixMappings(mappings);
+
         try {
             TinyMappingFormat.TINY_2.write(mappings, outputPath, "spigot", "mojang");
         } catch (IOException e) {
@@ -537,6 +539,35 @@ public abstract class MojoBase extends AbstractMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to clean up mappings");
         }
+    }
+
+    /**
+     * Fix mapping conflicts and issues that would crash tiny remapper if not fixed.
+     * <p>
+     * This is quite an ugly fix, and a workaround for a specific version (1.17).
+     * Ideally we would want to find a generic way to fix the mappings.
+     * <p>
+     * In an unlucky case where a plugin uses these methods it could cause issues,
+     * but that should hopefully be rare.
+     *
+     * @param mappings The mappings to fix.
+     */
+    public void fixMappings(MappingSet mappings) {
+        mappings.getClassMapping("net/minecraft/world/level/storage/loot/entries/LootEntryAbstract$Serializer")
+            .ifPresent(classMapping -> {
+                classMapping.getMethodMapping("serializeType", "(Lcom/google/gson/JsonObject;Lnet/minecraft/world/level/storage/loot/entries/LootEntryAbstract;Lcom/google/gson/JsonSerializationContext;)V")
+                    .ifPresent(methodMapping -> {
+                        methodMapping.setDeobfuscatedName("mappingfix");
+                    });
+            });
+
+        mappings.getClassMapping("net/minecraft/world/item/trading/IMerchant")
+            .ifPresent(classMapping -> {
+                classMapping.getMethodMapping("getWorld", "()Lnet/minecraft/world/level/World;")
+                    .ifPresent(methodMapping -> {
+                        methodMapping.setDeobfuscatedName("getCommandSenderWorld");
+                    });
+            });
     }
 
     /**
