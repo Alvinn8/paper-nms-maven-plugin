@@ -319,7 +319,7 @@ public abstract class MojoBase extends AbstractMojo {
 
         MavenArtifactRepository paperRepo = new MavenArtifactRepository(
             "papermc",
-            "https://papermc.io/repo/repository/maven-public/",
+            "https://repo.papermc.io/repository/maven-public/",
             new DefaultRepositoryLayout(),
             new ArtifactRepositoryPolicy(),
             new ArtifactRepositoryPolicy()
@@ -582,7 +582,7 @@ public abstract class MojoBase extends AbstractMojo {
 
         InputStream inputStream;
         try {
-            inputStream = new URL("https://papermc.io/api/v2/projects/paper/versions/" + gameVersion).openStream();
+            inputStream = new URL("https://api.papermc.io/v2/projects/paper/versions/" + gameVersion).openStream();
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to download paper builds", e);
         }
@@ -599,7 +599,7 @@ public abstract class MojoBase extends AbstractMojo {
         getLog().info("The latest paper build for " + gameVersion + " is " + highestBuild);
 
         getLog().info("Downloading paper");
-        this.downloadFile("https://papermc.io/api/v2/projects/paper/versions/" + gameVersion + "/builds/" + highestBuild + "/downloads/paper-" + gameVersion + "-" + highestBuild + ".jar", paperclipPath);
+        this.downloadFile("https://api.papermc.io/v2/projects/paper/versions/" + gameVersion + "/builds/" + highestBuild + "/downloads/paper-" + gameVersion + "-" + highestBuild + ".jar", paperclipPath);
     }
 
     /**
@@ -856,7 +856,7 @@ public abstract class MojoBase extends AbstractMojo {
             pom.append("<repositories>\n");
             pom.append("<repository>\n");
             pom.append("    <id>papermc</id>\n");
-            pom.append("    <url>https://papermc.io/repo/repository/maven-public/</url>\n");
+            pom.append("    <url>https://repo.papermc.io/repository/maven-public/</url>\n");
             pom.append("</repository>\n");
             pom.append("<repository>\n");
             pom.append("    <id>minecraft-libraries</id>\n");
