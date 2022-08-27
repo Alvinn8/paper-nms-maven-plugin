@@ -785,6 +785,9 @@ public abstract class MojoBase extends AbstractMojo {
         // Finish up tiny-remapper
         remapper.finish();
 
+        // Close the input jar
+        inputJar.close();
+
         // Close the output jar
         outputFileSystem.close();
     }
