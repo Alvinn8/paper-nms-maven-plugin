@@ -283,7 +283,7 @@ public abstract class MojoBase extends AbstractMojo {
             Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
             this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
 
-            getLog().info("Merge mappings");
+            getLog().info("Merging mappings");
             this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath, mappingsMojangPath, mappingsSpigotPath);
 
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
