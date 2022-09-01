@@ -32,6 +32,27 @@ public class RemapMojo extends MojoBase {
         Path cacheDirectory = this.getCacheDirectory();
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
 
+        Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
+        Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
+
+        boolean hasMojangMappings = Files.exists(mappingsMojangPath);
+        boolean hasSpigotMappings = Files.exists(mappingsSpigotPath);
+
+        if (hasMojangMappings != hasSpigotMappings) {
+            // One of the files is missing, delete the mappings and initialize again
+            getLog().info("Broken mappings found, running init");
+
+            try {
+                Files.delete(mappingsPath);
+                Files.delete(mappingsMojangPath);
+                Files.delete(mappingsSpigotPath);
+            } catch (IOException exception) {
+                throw new MojoExecutionException("Unable to delete mappings", exception);
+            }
+
+            this.init();
+        }
+
         String mappingFrom = "mojang";
         String mappingTo = "spigot";
 
@@ -53,21 +74,23 @@ public class RemapMojo extends MojoBase {
             classPath.add(artifact.getFile().toPath());
         }
 
-        if (!Files.exists(mappingsPath)) {
+        if (!Files.exists(mappingsPath) && !hasMojangMappings) {
             getLog().info("No mappings found, running init");
             this.init();
         }
 
-        try {
-            BufferedReader bufferedReader = Files.newBufferedReader(mappingsPath);
-            String line = bufferedReader.readLine();
-            bufferedReader.close();
-            // If the dev bundle is used, there are also yarn parameter mappings
-            if (line.contains("mojang+yarn")) {
-                mappingFrom = "mojang+yarn";
+        if (!hasMojangMappings) {
+            try {
+                BufferedReader bufferedReader = Files.newBufferedReader(mappingsPath);
+                String line = bufferedReader.readLine();
+                bufferedReader.close();
+                // If the dev bundle is used, there are also yarn parameter mappings
+                if (line.contains("mojang+yarn")) {
+                    mappingFrom = "mojang+yarn";
+                }
+            } catch (IOException e) {
+                throw new MojoExecutionException("Failed to check the mappings namespace.", e);
             }
-        } catch (IOException e) {
-            throw new MojoExecutionException("Failed to check the mappings namespace.", e);
         }
 
         // Tiny remapper is sometimes very verbose about mapping conflicts for older
@@ -106,15 +129,19 @@ public class RemapMojo extends MojoBase {
             }
         });
 
-        if (Files.isDirectory(inputPath)) {
-            // A directory, we are before the package stage, we need to remap the classes
-            getLog().info("Remapping classes");
-            this.remapClasses(inputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+        if (hasMojangMappings && hasSpigotMappings) {
+            remapDouble(inputPath, mappingsMojangPath, mappingsSpigotPath, classPath);
         } else {
-            // A file, we are at the package stage, we need to remap the jar
-            Path outputPath = cacheDirectory.resolve("remapped.jar");
-            getLog().info("Remapping artifact");
-            this.remapArtifact(inputPath, outputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+            if (Files.isDirectory(inputPath)) {
+                // A directory, we are before the package stage, we need to remap the classes
+                getLog().info("Remapping classes");
+                this.remapClasses(inputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+            } else {
+                // A file, we are at the package stage, we need to remap the jar
+                Path outputPath = cacheDirectory.resolve("remapped.jar");
+                getLog().info("Remapping artifact");
+                this.remapArtifact(inputPath, outputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+            }
         }
 
         System.out.println("/ %count% suppressed lines /");
@@ -170,6 +197,62 @@ public class RemapMojo extends MojoBase {
             Files.move(outputPath, artifactPath);
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to replace artifact with the remapped artifact.", e);
+        }
+    }
+
+    public void remapDouble(Path artifactPath, Path mappingsMojangPath, Path mappingsSpigotPath, List<Path> classPath) throws MojoExecutionException {
+        // Map from Mojang to obfuscated
+        if (Files.isDirectory(artifactPath)) {
+            getLog().info("Remapping classes to obfuscated form");
+            this.remapClasses(artifactPath, mappingsMojangPath, "mojang", "obfuscated", classPath);
+        } else {
+            Path outputPath = getCacheDirectory().resolve("remapped.jar");
+            getLog().info("Remapping artifact to obfuscated form");
+            this.remapArtifact(artifactPath, outputPath, mappingsMojangPath, "mojang", "obfuscated", classPath);
+        }
+
+        getLog().info("Remapping dependencies to obfuscated form");
+
+        List<Path> newClassPath = new ArrayList<>(classPath.size());
+
+        // Keep count to avoid accidentally overwriting dependencies
+        int count = 0;
+
+        // Map dependencies from Mojang to obfuscated to gain a correct classpath for the second mapping
+        for (Path path : classPath) {
+            List<Path> tempClassPath = new ArrayList<>(classPath);
+            tempClassPath.remove(path);
+            tempClassPath.add(artifactPath);
+
+            Path outputPath = path.getParent().resolve("remapped_dependency_" + count + ".jar");
+
+            try {
+                this.mapJar(path, outputPath, mappingsMojangPath, "mojang", "obfuscated", tempClassPath.toArray(new Path[0]));
+            } catch (IOException | URISyntaxException exception) {
+                throw new MojoExecutionException("Failed to remap dependency", exception);
+            }
+
+            newClassPath.add(outputPath);
+
+            count++;
+        }
+
+        // Map from obfuscated to Spigot
+        if (Files.isDirectory(artifactPath)) {
+            getLog().info("Remapping classes to Spigot mappings");
+            this.remapClasses(artifactPath, mappingsSpigotPath, "obfuscated", "spigot", newClassPath);
+        } else {
+            Path outputPath = getCacheDirectory().resolve("remapped_2.jar");
+            getLog().info("Remapping artifact to Spigot mappings");
+            this.remapArtifact(artifactPath, outputPath, mappingsSpigotPath, "obfuscated", "spigot", newClassPath);
+        }
+
+        for (Path path : newClassPath) {
+            try {
+                Files.delete(path);
+            } catch (IOException exception) {
+                throw new MojoExecutionException("Unable to delete remapped dependency", exception);
+            }
         }
     }
 }
