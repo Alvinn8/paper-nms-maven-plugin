@@ -272,6 +272,9 @@ public abstract class MojoBase extends AbstractMojo {
             // No dev-bundle exists for this version, let's create
             // mappings and map the jar manually.
 
+            Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
+            Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
+
             Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
             this.downloadMojangMappings(mojangMappingsPath, gameVersion);
 
@@ -281,7 +284,7 @@ public abstract class MojoBase extends AbstractMojo {
             this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
 
             getLog().info("Merging mappings");
-            this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath);
+            this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath, mappingsMojangPath, mappingsSpigotPath);
 
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
             this.downloadPaper(gameVersion, paperclipPath);
@@ -485,15 +488,17 @@ public abstract class MojoBase extends AbstractMojo {
     /**
      * Merge the spigot mappings and the Mojang mappings to create mappings from
      * Spigot mappings to Mojang mappings, and write the mappings to a file in the
-     * tiny format.
+     * tiny format. Also write the original Spigot and Mojang mappings to files.
      *
      * @param spigotClassMappingsPath The path of the Spigot class mappings (csrg).
      * @param spigotMemberMappingsPath The path of the Spigot member mappings (csrg).
      * @param mojangMappingsPath The path of the mojang mappings (proguard).
      * @param outputPath The path to put the merged mappings (tiny).
+     * @param outputMojangPath The path to put the mojang mappings (tiny).
+     * @param outputSpigotPath The path to put the spigot mappings (tiny).
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void mergeMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, Path mojangMappingsPath, Path outputPath) throws MojoExecutionException {
+    public void mergeMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, Path mojangMappingsPath, Path outputPath, Path outputMojangPath, Path outputSpigotPath) throws MojoExecutionException {
         MappingSet spigotMappings;
         MappingSet mojangMappings;
 
@@ -527,6 +532,8 @@ public abstract class MojoBase extends AbstractMojo {
 
         try {
             TinyMappingFormat.TINY_2.write(mappings, outputPath, "spigot", "mojang");
+            TinyMappingFormat.TINY_2.write(mojangMappings, outputMojangPath, "mojang", "obfuscated");
+            TinyMappingFormat.TINY_2.write(spigotMappings, outputSpigotPath, "obfuscated", "spigot");
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to write merged mappings", e);
         }
@@ -819,6 +826,7 @@ public abstract class MojoBase extends AbstractMojo {
         getLog().info("Cleaning up paper jar");
         try {
             Files.delete(paperPath);
+            Files.delete(mappingsPath);
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to delete paper jar", e);
         }
