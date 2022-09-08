@@ -45,12 +45,12 @@ Although you probably want to use Gradle and [paperweight-userdev](https://githu
 <dependency>
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms</artifactId>
-    <version>1.18.2-SNAPSHOT</version>
+    <version>1.19.2-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```
 
-Change `1.18.2` to the desired version.
+Change `1.19.2` to the desired version.
 
 4. Reload the project.
 
@@ -67,7 +67,7 @@ For arrow (4), double-click `paper-nms:init` to run it.
 7. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
 
 ## Issues
-### Only works for 1.17.x and 1.18.x.
+### Only works for 1.17 and higher
 On some older spigot versions, mappings use a package rename to avoid having to retype `net/minecraft/server` for every class mapping. See [issue #2](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/2).
 
 In the future all versions down to 1.14.4 should be supportable as there are Mojang mappings available since then.
