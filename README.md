@@ -56,7 +56,7 @@ Change `1.19.2` to the desired version.
 
 ![Press the "Load Maven Changes" button](docs/img/step-3.png)
 
-A `Cannot resolve ca.bkaw:paper-nms:1.18.2-SNAPSHOT` message is expected.
+A `Cannot resolve ca.bkaw:paper-nms:1.19.2-SNAPSHOT` message is expected.
 
 5. To create the missing dependency, run `init`.
 ![Instructions for running the paper-nms:init maven goal](docs/img/step-4.png)
