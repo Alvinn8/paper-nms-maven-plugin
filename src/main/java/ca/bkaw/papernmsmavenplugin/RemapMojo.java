@@ -35,10 +35,7 @@ public class RemapMojo extends MojoBase {
         Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
         Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
 
-        boolean hasMojangMappings = Files.exists(mappingsMojangPath);
-        boolean hasSpigotMappings = Files.exists(mappingsSpigotPath);
-
-        if (hasMojangMappings != hasSpigotMappings) {
+        if (Files.exists(mappingsMojangPath) != Files.exists(mappingsSpigotPath)) {
             // One of the files is missing, delete the mappings and initialize again
             getLog().info("Broken mappings found, running init");
 
@@ -74,10 +71,12 @@ public class RemapMojo extends MojoBase {
             classPath.add(artifact.getFile().toPath());
         }
 
-        if (!Files.exists(mappingsPath) && !hasMojangMappings) {
+        if (!Files.exists(mappingsPath) && !Files.exists(mappingsMojangPath)) {
             getLog().info("No mappings found, running init");
             this.init();
         }
+
+        boolean hasMojangMappings = Files.exists(mappingsMojangPath);
 
         if (!hasMojangMappings) {
             try {
@@ -129,7 +128,7 @@ public class RemapMojo extends MojoBase {
             }
         });
 
-        if (hasMojangMappings && hasSpigotMappings) {
+        if (hasMojangMappings) {
             remapDouble(inputPath, mappingsMojangPath, mappingsSpigotPath, classPath);
         } else {
             if (Files.isDirectory(inputPath)) {
