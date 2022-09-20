@@ -40,9 +40,9 @@ public class RemapMojo extends MojoBase {
             getLog().info("Broken mappings found, running init");
 
             try {
-                Files.delete(mappingsPath);
-                Files.delete(mappingsMojangPath);
-                Files.delete(mappingsSpigotPath);
+                Files.deleteIfExists(mappingsPath);
+                Files.deleteIfExists(mappingsMojangPath);
+                Files.deleteIfExists(mappingsSpigotPath);
             } catch (IOException exception) {
                 throw new MojoExecutionException("Unable to delete mappings", exception);
             }
