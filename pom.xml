@@ -6,7 +6,7 @@
 
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms-maven-plugin</artifactId>
-    <version>1.3.1</version>
+    <version>1.3.2</version>
 
     <packaging>maven-plugin</packaging>
 
@@ -109,7 +109,7 @@
         <dependency>
             <groupId>net.fabricmc</groupId>
             <artifactId>tiny-remapper</artifactId>
-            <version>0.7.0</version>
+            <version>0.8.2</version>
         </dependency>
     </dependencies>
 </project>
