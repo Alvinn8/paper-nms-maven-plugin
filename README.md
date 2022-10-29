@@ -25,7 +25,7 @@ Although you probably want to use Gradle and [paperweight-userdev](https://githu
         <plugin>
             <groupId>ca.bkaw</groupId>
             <artifactId>paper-nms-maven-plugin</artifactId>
-            <version>1.3.1</version>
+            <version>1.3.2</version>
             <executions>
                 <execution>
                     <phase>process-classes</phase>
