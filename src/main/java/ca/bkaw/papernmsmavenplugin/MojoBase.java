@@ -255,8 +255,23 @@ public abstract class MojoBase extends AbstractMojo {
         }
 
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
+        Path reobfSrgPath = cacheDirectory.resolve("mappings_" + gameVersion + ".srg");
         Path mappedPaperPath = cacheDirectory.resolve("mapped_paper_"+ gameVersion +".jar");
         List<String> dependencyCoordinates = new ArrayList<>();
+
+        Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
+        Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
+
+        Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
+        this.downloadMojangMappings(mojangMappingsPath, gameVersion);
+
+        getLog().info("Downloading spigot mappings");
+        Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings_"+ gameVersion +".csrg");
+        Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
+        this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
+
+        getLog().info("Merging mappings");
+        this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath, mappingsMojangPath, mappingsSpigotPath, reobfSrgPath);
 
         getLog().info("Downloading dev-bundle");
         Path devBundlePath = this.resolveDevBundle(gameVersion);
@@ -268,24 +283,14 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Extracting paper");
             this.extractPaperJar(gameVersion, cacheDirectory, mappedPaperPath);
+
+            try {
+                Files.delete(mappingsMojangPath);
+                Files.delete(mappingsSpigotPath);
+            } catch (IOException e) {
+                throw new MojoExecutionException("Failed to clean up mappings");
+            }
         } else {
-            // No dev-bundle exists for this version, let's create
-            // mappings and map the jar manually.
-
-            Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
-            Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
-
-            Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
-            this.downloadMojangMappings(mojangMappingsPath, gameVersion);
-
-            getLog().info("Downloading spigot mappings");
-            Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings_"+ gameVersion +".csrg");
-            Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
-            this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
-
-            getLog().info("Merging mappings");
-            this.mergeMappings(spigotClassMappingsPath, spigotMemberMappingsPath, mojangMappingsPath, mappingsPath, mappingsMojangPath, mappingsSpigotPath);
-
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
             this.downloadPaper(gameVersion, paperclipPath);
 
@@ -496,9 +501,10 @@ public abstract class MojoBase extends AbstractMojo {
      * @param outputPath The path to put the merged mappings (tiny).
      * @param outputMojangPath The path to put the mojang mappings (tiny).
      * @param outputSpigotPath The path to put the spigot mappings (tiny).
+     * @param outputSeargePath The path to put the merged mappings (srg).
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void mergeMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, Path mojangMappingsPath, Path outputPath, Path outputMojangPath, Path outputSpigotPath) throws MojoExecutionException {
+    public void mergeMappings(Path spigotClassMappingsPath, Path spigotMemberMappingsPath, Path mojangMappingsPath, Path outputPath, Path outputMojangPath, Path outputSpigotPath, Path outputSeargePath) throws MojoExecutionException {
         MappingSet spigotMappings;
         MappingSet mojangMappings;
 
@@ -531,6 +537,7 @@ public abstract class MojoBase extends AbstractMojo {
         this.fixMappings(mappings);
 
         try {
+            MappingFormats.SRG.write(mappings.reverse(), outputSeargePath);
             TinyMappingFormat.TINY_2.write(mappings, outputPath, "spigot", "mojang");
             TinyMappingFormat.TINY_2.write(mojangMappings, outputMojangPath, "mojang", "obfuscated");
             TinyMappingFormat.TINY_2.write(spigotMappings, outputSpigotPath, "obfuscated", "spigot");
