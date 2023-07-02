@@ -24,6 +24,8 @@ import java.util.List;
 
 @Mojo(name = "remap", defaultPhase = LifecyclePhase.PACKAGE)
 public class RemapMojo extends MojoBase {
+    private RemappedClasses remappedClasses;
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path inputPath = this.project.getArtifact().getFile().toPath();
@@ -145,9 +147,28 @@ public class RemapMojo extends MojoBase {
 
         System.out.println("/ %count% suppressed lines /");
         System.setOut(normalOut);
+
+        // Save the information about which classes have been remapped so that classes
+        // aren't remapped twice if maven chooses to cache classes that weren't changed.
+        if (this.remappedClasses != null) {
+            try {
+                this.remappedClasses.save();
+            } catch (IOException e) {
+                throw new MojoExecutionException("Failed to save remapped classes json.", e);
+            }
+        }
     }
 
-    public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) {
+    public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) throws MojoExecutionException {
+        // Read information about which classes have already been remapped
+        if (this.remappedClasses == null) {
+            try {
+                this.remappedClasses = new RemappedClasses(this.getCacheDirectory().resolve(RemappedClasses.FILE_NAME), classesPath);
+            } catch (IOException e) {
+                throw new MojoExecutionException("Failed to read remapped classes json.", e);
+            }
+        }
+
         // Read the mappings
         IMappingProvider mappings = TinyUtils.createTinyMappingProvider(mappingsPath, mappingFrom, mappingTo);
 
@@ -167,7 +188,10 @@ public class RemapMojo extends MojoBase {
         remapper.apply((name, bytes) -> {
             try {
                 Path path = classesPath.resolve(name + ".class");
-                Files.write(path, bytes);
+                if (!this.remappedClasses.isAlreadyRemapped(path)) {
+                    Files.write(path, bytes);
+                    this.remappedClasses.markAsRemappedNow(path);
+                }
             } catch (IOException e) {
                 throw new UncheckedIOException("Failed to write class " + name, e);
             }
