@@ -83,6 +83,9 @@ public abstract class MojoBase extends AbstractMojo {
     @Component
     ArtifactResolver artifactResolver;
 
+    @Parameter( property = "devBundle" )
+    DevBundle devBundle;
+
     // Paths
 
     /**
@@ -100,6 +103,29 @@ public abstract class MojoBase extends AbstractMojo {
     // Getters
 
     /**
+     * Get the group id of the generated nms dependency.
+     * <p>
+     * If using the default configuration for NMS with Paper, the group id will be
+     * "ca.bkaw" and the artifact id "paper-nms". When custom dev bundles are used,
+     * the group id will be "ca.bkaw.nms" since the artifact id can be configured
+     * by the user.
+     *
+     * @return The group id.
+     */
+    public String getNmsGroupId() {
+        return "paper-nms".equals(this.devBundle.id) ? "ca.bkaw" : "ca.bkaw.nms";
+    }
+
+    /**
+     * If the {@link #devBundle} hasn't been set, set the default.
+     */
+    public void createDevBundleConfiguration() {
+        if (this.devBundle == null || this.devBundle.id == null) {
+            this.devBundle = DevBundle.PAPER_DEV_BUNDLE;
+        }
+    }
+
+    /**
      * Get the game version the user desires to use for this project.
      *
      * @return The game version.
@@ -109,7 +135,7 @@ public abstract class MojoBase extends AbstractMojo {
         for (Object object : this.project.getDependencies()) {
             Dependency dependency = (Dependency) object;
 
-            if ("ca.bkaw".equals(dependency.getGroupId()) && "paper-nms".equals(dependency.getArtifactId())) {
+            if (this.getNmsGroupId().equals(dependency.getGroupId()) && this.devBundle.id.equals(dependency.getArtifactId())) {
                 String version = dependency.getVersion();
                 return version.substring(0, version.indexOf('-'));
             }
@@ -118,13 +144,13 @@ public abstract class MojoBase extends AbstractMojo {
             "Unable to find the version to use. Make sure you have the following dependency in your <dependencies> tag:" +
             "\n" +
             "\n<dependency>" +
-            "\n    <groupId>ca.bkaw</groupId>" +
-            "\n    <artifactId>paper-nms</artifactId>" +
-            "\n    <version>1.18.1-SNAPSHOT</version>" +
+            "\n    <groupId>"+ this.getNmsGroupId() +"</groupId>" +
+            "\n    <artifactId>"+ this.devBundle.id +"</artifactId>" +
+            "\n    <version>1.20.1-SNAPSHOT</version>" +
             "\n    <scope>provided</scope>" +
             "\n</dependency>" +
             "\n" +
-            "\n Replacing \"1.18.1\" with the desired version.");
+            "\n Replacing \"1.20.1\" with the desired version.");
     }
 
     // Utils
@@ -235,17 +261,20 @@ public abstract class MojoBase extends AbstractMojo {
     // Init
 
     /**
-     * Initialize paper-nms. Will create a Mojang mapped paper dependency and install
+     * Initialize paper-nms. Will create a Mojang mapped server dependency and install
      * it into the local repository.
      *
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
     public void init() throws MojoExecutionException, MojoFailureException {
+        this.createDevBundleConfiguration();
+
         String gameVersion = this.getGameVersion();
         Path cacheDirectory = this.getCacheDirectory();
 
-        getLog().info("Initializing paper-nms for game version: " + gameVersion);
+        String extra = !"paper-nms".equals(this.devBundle.id) ? " (" + this.devBundle.id + ")" : "";
+        getLog().info("Initializing paper-nms for game version: " + gameVersion + extra);
 
         getLog().info("Preparing cache folder");
         try {
@@ -255,7 +284,7 @@ public abstract class MojoBase extends AbstractMojo {
         }
 
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
-        Path mappedPaperPath = cacheDirectory.resolve("mapped_paper_"+ gameVersion +".jar");
+        Path mappedServerPath = cacheDirectory.resolve("mapped_"+ gameVersion +".jar");
         List<String> dependencyCoordinates = new ArrayList<>();
 
         getLog().info("Downloading dev-bundle");
@@ -266,8 +295,8 @@ public abstract class MojoBase extends AbstractMojo {
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
             this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates);
 
-            getLog().info("Extracting paper");
-            this.extractPaperJar(gameVersion, cacheDirectory, mappedPaperPath);
+            getLog().info("Extracting server");
+            this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
         } else {
             // No dev-bundle exists for this version, let's create
             // mappings and map the jar manually.
@@ -291,19 +320,19 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Extracting paper");
             Path paperPath = cacheDirectory.resolve("paper.jar");
-            this.extractPaperJar(gameVersion, cacheDirectory, paperPath);
+            this.extractServerJar(gameVersion, cacheDirectory, paperPath);
 
             getLog().info("Mapping paper jar");
-            this.mapPaperJar(mappingsPath, paperPath, mappedPaperPath);
+            this.mapPaperJar(mappingsPath, paperPath, mappedServerPath);
         }
 
         getLog().info("Installing into local maven repository");
         Path pomPath = cacheDirectory.resolve("pom.xml");
-        this.installToMavenRepo(gameVersion, dependencyCoordinates, mappedPaperPath, pomPath);
+        this.installToMavenRepo(gameVersion, dependencyCoordinates, mappedServerPath, pomPath);
     }
 
     /**
-     * Resolve the paper dev-bundle containing useful files and get the path to it.
+     * Resolve the dev-bundle containing useful files and get the path to it.
      *
      * <p>For versions that do not have a dev-bundle, null is returned.</p>
      *
@@ -311,25 +340,41 @@ public abstract class MojoBase extends AbstractMojo {
      * @return The path of the dev-bundle, or null if no dev-bundle was found.
      */
     @Nullable
-    public Path resolveDevBundle(String gameVersion) {
+    public Path resolveDevBundle(String gameVersion) throws MojoExecutionException {
         Artifact artifact = this.artifactFactory.createArtifactWithClassifier(
-            "io.papermc.paper",
-            "dev-bundle",
-            gameVersion + "-R0.1-SNAPSHOT",
+            this.devBundle.artifact.groupId,
+            this.devBundle.artifact.artifactId,
+             this.devBundle.artifact.version.replace("${gameVersion}", gameVersion),
             "zip",
-            null // classifier
-        );
-
-        MavenArtifactRepository paperRepo = new MavenArtifactRepository(
-            "papermc",
-            "https://repo.papermc.io/repository/maven-public/",
-            new DefaultRepositoryLayout(),
-            new ArtifactRepositoryPolicy(),
-            new ArtifactRepositoryPolicy()
+            this.devBundle.artifact.classifier
         );
 
         List<ArtifactRepository> repositories = new ArrayList<>();
-        repositories.add(paperRepo);
+
+        if (this.devBundle.repository != null) {
+            String url = this.devBundle.repository.url;
+            if (url == null) {
+                for (ArtifactRepository remoteRepository : this.remoteRepositories) {
+                    if (remoteRepository.getId().equals(this.devBundle.repository.id)) {
+                        url = remoteRepository.getUrl();
+                        break;
+                    }
+                }
+            }
+            if (url == null) {
+                throw new MojoExecutionException("Failed to find url for repository " + this.devBundle.repository.id);
+            }
+            MavenArtifactRepository repo = new MavenArtifactRepository(
+                this.devBundle.repository.id,
+                url,
+                new DefaultRepositoryLayout(),
+                new ArtifactRepositoryPolicy(),
+                new ArtifactRepositoryPolicy()
+            );
+
+            repositories.add(repo);
+        }
+
 
         try {
             this.artifactResolver.resolve(artifact, repositories, this.localRepository);
@@ -610,8 +655,8 @@ public abstract class MojoBase extends AbstractMojo {
     }
 
     /**
-     * Extract the paper jar from the downloaded paperclip jar. Depending on the
-     * version, the extracted paper jar might have all dependencies shaded or not.
+     * Extract the server jar from the downloaded paperclip jar. Depending on the
+     * version, the extracted jar might have all dependencies shaded or not.
      *
      * <p>If the dependencies are not shaded, a list of dependencies can then be found
      * inside the META-INF/libraries.list file inside the paperclip jar.</p>
@@ -621,11 +666,11 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param gameVersion The game version.
      * @param cacheDirectory The cache directory.
-     * @param paperPath The path to put the extracted paper jar.
+     * @param serverPath The path to put the extracted server jar.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractPaperJar(String gameVersion, Path cacheDirectory, Path paperPath) throws MojoExecutionException, MojoFailureException {
+    public void extractServerJar(String gameVersion, Path cacheDirectory, Path serverPath) throws MojoExecutionException, MojoFailureException {
         String javaExecutable;
         Path bin = Paths.get(System.getProperty("java.home"), "bin");
         Path javaPath = bin.resolve("java");
@@ -667,7 +712,7 @@ public abstract class MojoBase extends AbstractMojo {
                         Matcher matcher = Pattern.compile("Java (?<number>\\d+)").matcher(line);
                         if (matcher.find()) {
                             String number = matcher.group("number");
-                            throw new MojoFailureException("Failed to extract paper due to an outdated Java version." +
+                            throw new MojoFailureException("Failed to extract the server jar due to an outdated Java version." +
                                 "\nPaperclip failed due to an outdated Java version." +
                                 "\n" +
                                 "\nTry changing the project's java version by for example adding the following to your pom.xml." +
@@ -695,20 +740,35 @@ public abstract class MojoBase extends AbstractMojo {
             throw new MojoExecutionException("Paperclip exited with exit code: " + exitCode);
         }
 
-        Path extractedPaperPath = cacheDirectory.resolve("versions").resolve(gameVersion).resolve("paper-" + gameVersion + ".jar");
-        if (!Files.exists(extractedPaperPath)) {
-            extractedPaperPath = cacheDirectory.resolve("cache").resolve("patched_" + gameVersion + ".jar");
-            if (!Files.exists(extractedPaperPath)) {
-                throw new MojoExecutionException("Unable to find the patched paper jar");
+        String versionsPath = null;
+        try (FileSystem paperclipJar = FileSystems.newFileSystem(URI.create("jar:" + cacheDirectory.resolve("paperclip.jar").toUri()), new HashMap<>())) {
+            Path versionsListPath = paperclipJar.getPath("META-INF", "versions.list");
+            List<String> versions = Files.readAllLines(versionsListPath);
+            for (String versionLine : versions) {
+                versionsPath = versionLine.split("\t")[2];
+            }
+        } catch (IOException e) {
+            throw new MojoExecutionException("Unable to get path of extracted server in the versions folder.", e);
+        }
+
+        if (versionsPath == null) {
+            throw new MojoExecutionException("Unable to find path of extracted server in the versions folder.");
+        }
+
+        Path extractedServerPath = cacheDirectory.resolve("versions").resolve(versionsPath);
+        if (!Files.exists(extractedServerPath)) {
+            extractedServerPath = cacheDirectory.resolve("cache").resolve("patched_" + gameVersion + ".jar");
+            if (!Files.exists(extractedServerPath)) {
+                throw new MojoExecutionException("Unable to find the patched server jar");
             }
         }
 
         try {
-            Files.move(extractedPaperPath, paperPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(extractedServerPath, serverPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
-            throw new MojoExecutionException("Failed to move extracted paper jar into .paper-nms folder", e);
+            throw new MojoExecutionException("Failed to move extracted server jar into .paper-nms folder", e);
         }
-        getLog().info("Extracted paper jar");
+        getLog().info("Extracted server jar");
 
         getLog().info("Cleaning up paperclip");
         try {
@@ -833,11 +893,12 @@ public abstract class MojoBase extends AbstractMojo {
     }
 
     /**
-     * Install the mapped paper jar to the local maven repository.
+     * Install the mapped server jar to the local maven repository.
      *
-     * <p>Will install with the artifact id {@code ca.bkaw}, the artifact id
-     * {@code paper-nms} and the version {@code gameVersion-SNAPSHOT} where
-     * {@code gameVersion} is replaced with the game version.</p>
+     * <p>Will install with the group id {@link #getNmsGroupId()}, the artifact id
+     * will be the configured dev bundle id and the version
+     * {@code gameVersion-SNAPSHOT} where {@code gameVersion} is replaced
+     * with the game version.</p>
      *
      * <p>A pom will be generated and installed with the artifact.</p>
      *
@@ -847,18 +908,18 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param gameVersion The game version.
      * @param dependencyCoordinates A list of coordinates of dependencies.
-     * @param mappedPaperPath The path to the mapped paper jar to install.
+     * @param mappedServerPath The path to the mapped server jar to install.
      * @param pomPath The path to the pom file that will be generated.
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, Path mappedPaperPath, Path pomPath) throws MojoExecutionException {
+    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, Path mappedServerPath, Path pomPath) throws MojoExecutionException {
         StringBuilder pom = new StringBuilder()
             .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             .append("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\" xmlns=\"http://maven.apache.org/POM/4.0.0\"\n")
             .append("    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">\n")
             .append("  <modelVersion>4.0.0</modelVersion>\n")
-            .append("  <groupId>ca.bkaw</groupId>\n")
-            .append("  <artifactId>paper-nms</artifactId>\n")
+            .append("  <groupId>").append(this.getNmsGroupId()).append("</groupId>\n")
+            .append("  <artifactId>").append(this.devBundle.id).append("</artifactId>\n")
             .append("  <version>").append(gameVersion).append("-SNAPSHOT</version>\n");
 
         // Add dependencies
@@ -906,16 +967,16 @@ public abstract class MojoBase extends AbstractMojo {
         }
 
         try {
-            this.installViaArtifactInstaller(mappedPaperPath, pomPath, gameVersion);
+            this.installViaArtifactInstaller(mappedServerPath, pomPath, gameVersion);
         } catch (ArtifactInstallationException e) {
-            throw new MojoExecutionException("Failed to install mapped paper jar to local repository.", e);
+            throw new MojoExecutionException("Failed to install mapped server jar to local repository.", e);
         }
 
         getLog().info("Installed into local repository");
 
         getLog().info("Cleaning up");
         try {
-            Files.delete(mappedPaperPath);
+            Files.delete(mappedServerPath);
             Files.deleteIfExists(pomPath);
         } catch (IOException e) {
             throw new MojoExecutionException("Failed to clean up", e);
@@ -923,12 +984,12 @@ public abstract class MojoBase extends AbstractMojo {
     }
 
     /**
-     * Install the mapped paper jar into the local repository by using the
+     * Install the mapped server jar into the local repository by using the
      * {@link ArtifactInstaller}.
      *
-     * <p>Will install with the artifact id {@code ca.bkaw}, the artifact id
-     * {@code paper-nms} and the version {@code gameVersion-SNAPSHOT} where
-     * {@code gameVersion} is replaced with the game version.</p>
+     * <p>Will install with the group id {@link #getNmsGroupId()}, the artifact id
+     * will be the dev bundle id and the version {@code gameVersion-SNAPSHOT}
+     * where {@code gameVersion} is replaced with the game version.</p>
      *
      * @param artifactPath The path to the artifact to install.
      * @param pomPath The path to the pom to install with it.
@@ -936,7 +997,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @throws ArtifactInstallationException If something goes wrong.
      */
     private void installViaArtifactInstaller(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
-        Artifact artifact = this.artifactFactory.createArtifactWithClassifier("ca.bkaw", "paper-nms", gameVersion + "-SNAPSHOT", "jar", null);
+        Artifact artifact = this.artifactFactory.createArtifactWithClassifier(this.getNmsGroupId(), this.devBundle.id, gameVersion + "-SNAPSHOT", "jar", null);
 
         // Add pom
         ProjectArtifactMetadata pomMetadata = new ProjectArtifactMetadata(artifact, pomPath.toFile());
@@ -958,6 +1019,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @throws IOException If something goes wrong.
      * @throws InterruptedException If something goes wrong.
      */
+    @Deprecated
     private void installViaCmd(Path artifactPath, Path pomPath) throws ArtifactInstallationException, IOException, InterruptedException {
         String mvn = System.getProperty("os.name").toLowerCase().contains("windows") ? "mvn.cmd" : "mvn";
         int exitCode = new ProcessBuilder(mvn, "-version").start().waitFor();
@@ -983,6 +1045,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @param gameVersion The game version.
      * @throws ArtifactInstallationException If something goes wrong.
      */
+    @Deprecated
     private void installViaCopy(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
         Path basePath = Paths.get(this.localRepository.getBasedir(), "ca", "bkaw", "paper-nms", gameVersion + "-SNAPSHOT");
 

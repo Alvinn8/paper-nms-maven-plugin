@@ -28,6 +28,8 @@ public class RemapMojo extends MojoBase {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        this.createDevBundleConfiguration();
+
         Path inputPath = this.project.getArtifact().getFile().toPath();
 
         String gameVersion = this.getGameVersion();
