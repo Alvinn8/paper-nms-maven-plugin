@@ -3,7 +3,7 @@ A maven plugin for using NMS on [Paper](https://github.com/PaperMC/Paper) with M
 
 This plugin will both create the mapped paper dependency and install it to your local repository, and remap your artifact back to spigot mappings.
 
-Although you probably want to use Gradle and [paperweight-userdev](https://github.com/PaperMC/paperweight-test-plugin) instead.
+> This is an unofficial plugin. You probably want to use Gradle and the officially supported [paperweight-userdev](https://github.com/PaperMC/paperweight-test-plugin) plugin instead. Do not ask PaperMC for support regarding this plugin. Instead, direct message `alvinn8` on discord and I will try to help you.
 
 ## Usage (IntelliJ)
 1. Add `.paper-nms` to your `.gitignore`.
@@ -65,6 +65,23 @@ For arrow (4), double-click `paper-nms:init` to run it.
 6. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
 
 7. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
+
+## Usage with NMS modules that depend on each other
+
+If you have multiple modules that use NMS that depend on each other and that will be shaded into one jar, the plugin needs to be configured in a different way.
+
+> Note that this only applies if you have multiple NMS modules that __depend on each other__ and that will __shade each other__.
+
+Let's say you have two modules, `api` and `plugin`. Both of these modules use NMS. `api` has an interface that uses NMS types, and `plugin` implements this interface. The `plugin` module shades the `api` module.
+
+To use the plugin with this setup it needs to remap the resulting shaded jar file instead of remapping classes.
+
+1. In the `api` module, remove the executions part of the plugin configuration so that it doesn't remap that module.
+2. In the `plugin` module, change the remap goal to run during the `package` phase instead of `process-classes`, and make sure the paper-nms-maven-plugin is located __after__ the maven-shade-plugin.
+
+This way the plugin will remap the jar file after it has been shaded, and all shaded dependencies will also be remapped.
+
+See [issue #16](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/16) (Closed) for more information.
 
 ## Usage with paper forks
 You can specify a custom dev bundle to use NMS with paper forks.
