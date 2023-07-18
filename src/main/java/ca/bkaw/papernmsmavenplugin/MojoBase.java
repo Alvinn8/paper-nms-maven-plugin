@@ -297,7 +297,7 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Extracting server");
             this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
-        } else {
+        } else if (this.devBundle == DevBundle.PAPER_DEV_BUNDLE) {
             // No dev-bundle exists for this version, let's create
             // mappings and map the jar manually.
 
@@ -324,6 +324,8 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Mapping paper jar");
             this.mapPaperJar(mappingsPath, paperPath, mappedServerPath);
+        } else {
+            throw new MojoFailureException("No dev bundle was found for version " + gameVersion);
         }
 
         getLog().info("Installing into local maven repository");
@@ -743,20 +745,24 @@ public abstract class MojoBase extends AbstractMojo {
         String versionsPath = null;
         try (FileSystem paperclipJar = FileSystems.newFileSystem(URI.create("jar:" + cacheDirectory.resolve("paperclip.jar").toUri()), new HashMap<>())) {
             Path versionsListPath = paperclipJar.getPath("META-INF", "versions.list");
-            List<String> versions = Files.readAllLines(versionsListPath);
-            for (String versionLine : versions) {
-                versionsPath = versionLine.split("\t")[2];
+            if (Files.exists(versionsListPath)) {
+                List<String> versions = Files.readAllLines(versionsListPath);
+                for (String versionLine : versions) {
+                    versionsPath = versionLine.split("\t")[2];
+                }
             }
         } catch (IOException e) {
             throw new MojoExecutionException("Unable to get path of extracted server in the versions folder.", e);
         }
 
-        if (versionsPath == null) {
-            throw new MojoExecutionException("Unable to find path of extracted server in the versions folder.");
+        Path extractedServerPath = null;
+        if (versionsPath != null) {
+            extractedServerPath = cacheDirectory.resolve("versions").resolve(versionsPath);
+            if (!Files.exists(extractedServerPath)) {
+                extractedServerPath = null;
+            }
         }
-
-        Path extractedServerPath = cacheDirectory.resolve("versions").resolve(versionsPath);
-        if (!Files.exists(extractedServerPath)) {
+        if (extractedServerPath == null) {
             extractedServerPath = cacheDirectory.resolve("cache").resolve("patched_" + gameVersion + ".jar");
             if (!Files.exists(extractedServerPath)) {
                 throw new MojoExecutionException("Unable to find the patched server jar");

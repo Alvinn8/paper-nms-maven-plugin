@@ -25,7 +25,7 @@ This plugin will both create the mapped paper dependency and install it to your 
         <plugin>
             <groupId>ca.bkaw</groupId>
             <artifactId>paper-nms-maven-plugin</artifactId>
-            <version>1.4</version>
+            <version>1.4.1</version>
             <executions>
                 <execution>
                     <phase>process-classes</phase>
