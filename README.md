@@ -130,6 +130,8 @@ The repository can be omitted and the dev bundle will be fetched from maven loca
 
 It is also possible to omit the `url` from the `repository` tag if you already have defined a repository with the same `id` in the `repositories` tag of your pom.xml.
 
+If the repository requires authentication, prefer specifying the `id` of the repository and define the repository in the `repositories` tag of your pom.xml.
+
 ## Issues
 ### Only works for 1.17 and higher
 On some older spigot versions, mappings use a package rename to avoid having to retype `net/minecraft/server` for every class mapping. See [issue #2](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/2).

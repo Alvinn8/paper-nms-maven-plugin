@@ -354,27 +354,29 @@ public abstract class MojoBase extends AbstractMojo {
         List<ArtifactRepository> repositories = new ArrayList<>();
 
         if (this.devBundle.repository != null) {
-            String url = this.devBundle.repository.url;
-            if (url == null) {
+            if (this.devBundle.repository.url == null) {
+                // The user has not provided a URL to the repository. Get the repository from
+                // the <repositories> tag that has the same id.
+                ArtifactRepository repo = null;
                 for (ArtifactRepository remoteRepository : this.remoteRepositories) {
                     if (remoteRepository.getId().equals(this.devBundle.repository.id)) {
-                        url = remoteRepository.getUrl();
+                        repo = remoteRepository;
                         break;
                     }
                 }
+                if (repo == null) {
+                    throw new MojoExecutionException("Failed to find repository " + this.devBundle.repository.id);
+                }
+            } else {
+                // The user provided a link to the repository, construct a simple repository.
+                repositories.add(new MavenArtifactRepository(
+                    this.devBundle.repository.id,
+                    this.devBundle.repository.url,
+                    new DefaultRepositoryLayout(),
+                    new ArtifactRepositoryPolicy(),
+                    new ArtifactRepositoryPolicy()
+                ));
             }
-            if (url == null) {
-                throw new MojoExecutionException("Failed to find url for repository " + this.devBundle.repository.id);
-            }
-            MavenArtifactRepository repo = new MavenArtifactRepository(
-                this.devBundle.repository.id,
-                url,
-                new DefaultRepositoryLayout(),
-                new ArtifactRepositoryPolicy(),
-                new ArtifactRepositoryPolicy()
-            );
-
-            repositories.add(repo);
         }
 
 
