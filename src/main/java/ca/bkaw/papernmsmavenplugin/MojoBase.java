@@ -367,6 +367,7 @@ public abstract class MojoBase extends AbstractMojo {
                 if (repo == null) {
                     throw new MojoExecutionException("Failed to find repository " + this.devBundle.repository.id);
                 }
+                repositories.add(repo);
             } else {
                 // The user provided a link to the repository, construct a simple repository.
                 repositories.add(new MavenArtifactRepository(
