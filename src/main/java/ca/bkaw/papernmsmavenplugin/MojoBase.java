@@ -146,11 +146,11 @@ public abstract class MojoBase extends AbstractMojo {
             "\n<dependency>" +
             "\n    <groupId>"+ this.getNmsGroupId() +"</groupId>" +
             "\n    <artifactId>"+ this.devBundle.id +"</artifactId>" +
-            "\n    <version>1.20.1-SNAPSHOT</version>" +
+            "\n    <version>1.20.2-SNAPSHOT</version>" +
             "\n    <scope>provided</scope>" +
             "\n</dependency>" +
             "\n" +
-            "\n Replacing \"1.20.1\" with the desired version.");
+            "\n Replacing \"1.20.2\" with the desired version.");
     }
 
     // Utils
