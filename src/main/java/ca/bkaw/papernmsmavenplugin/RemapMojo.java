@@ -3,6 +3,7 @@ package ca.bkaw.papernmsmavenplugin;
 import net.fabricmc.tinyremapper.IMappingProvider;
 import net.fabricmc.tinyremapper.TinyRemapper;
 import net.fabricmc.tinyremapper.TinyUtils;
+import net.fabricmc.tinyremapper.extension.mixin.MixinExtension;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
 import org.apache.maven.artifact.resolver.ArtifactResolutionException;
@@ -178,6 +179,7 @@ public class RemapMojo extends MojoBase {
         TinyRemapper remapper = TinyRemapper.newRemapper()
             .withMappings(mappings)
             .ignoreConflicts(true)
+            .extension(new MixinExtension())
             .build();
 
         // Add the class path
