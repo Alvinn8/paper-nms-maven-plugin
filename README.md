@@ -84,6 +84,27 @@ This way the plugin will remap the jar file after it has been shaded, and all sh
 
 See [issue #16](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/16) (Closed) for more information.
 
+## Mojang mappings in runtime on Paper 1.20.5+
+Paper 1.20.5+ uses a Mojang-mapped runtime instead of using Spigot mappings in runtime. If you want to support Spigot you can continue to use the `paper-nms-maven-plugin` like before.
+
+If you are targeting Paper and do not care about Spigot compatibility, you can disable remapping of your plugin back to Spigot mappings. To do so, add the following to your `pom.xml`:
+
+```xml
+<plugin>
+    <groupId>org.apache.maven.plugins</groupId>
+    <artifactId>maven-jar-plugin</artifactId>
+    <version>3.4.1</version>
+    <configuration>
+        <archive>
+            <manifestEntries>
+                <paperweight-mappings-namespace>mojang</paperweight-mappings-namespace>
+            </manifestEntries>
+        </archive>
+    </configuration>
+</plugin>
+```
+and remove the `executions` part of the `paper-nms-maven-plugin` plugin.
+
 ## Usage with paper forks
 You can specify a custom dev bundle to use NMS with paper forks.
 
