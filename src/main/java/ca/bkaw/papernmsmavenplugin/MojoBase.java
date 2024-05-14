@@ -413,9 +413,9 @@ public abstract class MojoBase extends AbstractMojo {
 
             int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
 
-            if (dataVersion != 3 && dataVersion != 2) {
+            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5) {
                 getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
-                    " but only 2 and 3 are supported. Things may not work properly. If problems occur, try" +
+                    " but only 2, 3 and 5 are supported. Things may not work properly. If problems occur, try" +
                     " updating the maven plugin to a newer version if that exists.");
             }
 
@@ -429,7 +429,9 @@ public abstract class MojoBase extends AbstractMojo {
                 }
                 // The API is not in the runtimeDependencies array
                 dependencyCoordinates.add(config.getString("apiCoordinates"));
-                dependencyCoordinates.add(config.getString("mojangApiCoordinates"));
+                if (config.has("mojangApiCoordinates")) {
+                    dependencyCoordinates.add(config.getString("mojangApiCoordinates"));
+                }
             }
 
             Path bundleMappingsPath = devBundle.getPath(buildData.getString("reobfMappingsFile"));

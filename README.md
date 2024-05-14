@@ -3,6 +3,7 @@ A maven plugin for using NMS on [Paper](https://github.com/PaperMC/Paper) with M
 
 This plugin will both create the mapped paper dependency and install it to your local repository, and remap your artifact back to spigot mappings.
 
+> [!NOTE]
 > This is an unofficial plugin. You probably want to use Gradle and the officially supported [paperweight-userdev](https://github.com/PaperMC/paperweight-test-plugin) plugin instead. Do not ask PaperMC for support regarding this plugin. Instead, direct message `alvinn8` on discord and I will try to help you.
 
 ## Usage (IntelliJ)
