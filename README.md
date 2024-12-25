@@ -46,18 +46,18 @@ This plugin will both create the mapped paper dependency and install it to your 
 <dependency>
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms</artifactId>
-    <version>1.20.6-SNAPSHOT</version>
+    <version>1.21.4-SNAPSHOT</version>
     <scope>provided</scope>
 </dependency>
 ```
 
-Change `1.20.6` to the desired version.
+Change `1.21.4` to the desired version.
 
 4. Reload the project.
 
 ![Press the "Load Maven Changes" button](docs/img/step-3.png)
 
-A `Cannot resolve ca.bkaw:paper-nms:1.20.6-SNAPSHOT` message is expected.
+A `Cannot resolve ca.bkaw:paper-nms:1.21.4-SNAPSHOT` message is expected.
 
 5. To create the missing dependency, run `init`.
 ![Instructions for running the paper-nms:init maven goal](docs/img/step-4.png)
@@ -105,6 +105,9 @@ If you are targeting Paper and do not care about Spigot compatibility, you can d
 ```
 and remove the `executions` part of the `paper-nms-maven-plugin` plugin.
 
+## Troubleshooting: `remap failed: Duplicate key`
+Delete the file `.paper-nms/classes.json` and try again.
+
 ## Usage with paper forks
 You can specify a custom dev bundle to use NMS with paper forks.
 
@@ -140,7 +143,7 @@ This is done by configuring the plugin as follows.
         <!-- Custom dev bundles get the group id ca.bkaw.nms instead of just ca.bkaw -->
         <groupId>ca.bkaw.nms</groupId>
         <artifactId>forktest-nms</artifactId> <!-- Note that this is forktest-nms -->
-        <version>1.20.6-SNAPSHOT</version>
+        <version>1.21.4-SNAPSHOT</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
