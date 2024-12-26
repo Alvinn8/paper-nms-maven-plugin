@@ -397,7 +397,7 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * <p>The {@code dependencyCoordinates} list will be populated if the dev bundle
      * is of a data version where the server dependencies are not included in the
-     * server jar (1.18+).</p>
+     * server jar and where such information is present (1.18 - 1.21.4).</p>
      *
      * @param paperclipPath The path to put the mapped paperclip jar.
      * @param mappingsPath The path to put the extracted mappings.
@@ -413,17 +413,18 @@ public abstract class MojoBase extends AbstractMojo {
 
             int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
 
-            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5) {
+            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6) {
                 getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
-                    " but only 2, 3 and 5 are supported. Things may not work properly. If problems occur, try" +
-                    " updating the maven plugin to a newer version if that exists.");
+                    " but only 2, 3, 5 and 6 are supported. Things may not work properly. If problems occur, try" +
+                    " updating paper-nms-maven-plugin to a newer version if that exists.");
             }
 
             JSONObject config = new JSONObject(new JSONTokener(Files.newInputStream(devBundle.getPath("config.json"))));
-            JSONObject buildData = config.getJSONObject("buildData");
+            JSONObject buildData = config.has("buildData") ? config.getJSONObject("buildData") : null;
 
-            if (dataVersion >= 3) {
+            if (dataVersion >= 3 && dataVersion < 6 && buildData != null) {
                 // Dependencies only need to be added for 1.18+ where they are not in the jar
+                // And in 1.21.4+ they are no longer provided in the dev-bundle.
                 for (Object runtimeDependency : buildData.getJSONArray("runtimeDependencies")) {
                     dependencyCoordinates.add(String.valueOf(runtimeDependency));
                 }
@@ -432,6 +433,12 @@ public abstract class MojoBase extends AbstractMojo {
                 if (config.has("mojangApiCoordinates")) {
                     dependencyCoordinates.add(config.getString("mojangApiCoordinates"));
                 }
+            }
+
+            if (dataVersion >= 6 || buildData == null) {
+                // In data version 6 and above, buildData no longer exists and the information
+                // below is instead accessed from the json root.
+                buildData = config;
             }
 
             Path bundleMappingsPath = devBundle.getPath(buildData.getString("reobfMappingsFile"));
