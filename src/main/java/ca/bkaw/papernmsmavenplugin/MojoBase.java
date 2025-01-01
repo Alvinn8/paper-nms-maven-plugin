@@ -64,6 +64,7 @@ import java.util.regex.Pattern;
 /**
  * A base class for all mojos that has shared methods.
  */
+@SuppressWarnings("deprecation")
 public abstract class MojoBase extends AbstractMojo {
     @Parameter( defaultValue = "${project}", required = true, readonly = true )
     MavenProject project;
@@ -293,7 +294,7 @@ public abstract class MojoBase extends AbstractMojo {
         if (devBundlePath != null) {
             getLog().info("Extracting dev-bundle");
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
-            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates);
+            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates, gameVersion);
 
             getLog().info("Extracting server");
             this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
@@ -334,23 +335,13 @@ public abstract class MojoBase extends AbstractMojo {
     }
 
     /**
-     * Resolve the dev-bundle containing useful files and get the path to it.
+     * Get a list of the repositories to use to search for the dev-bundle and related
+     * resources.
      *
-     * <p>For versions that do not have a dev-bundle, null is returned.</p>
-     *
-     * @param gameVersion The game version of the dev-bundle to download.
-     * @return The path of the dev-bundle, or null if no dev-bundle was found.
+     * @return The list of maven repositories.
+     * @throws MojoExecutionException If a specific repository could not be found.
      */
-    @Nullable
-    public Path resolveDevBundle(String gameVersion) throws MojoExecutionException {
-        Artifact artifact = this.artifactFactory.createArtifactWithClassifier(
-            this.devBundle.artifact.groupId,
-            this.devBundle.artifact.artifactId,
-             this.devBundle.artifact.version.replace("${gameVersion}", gameVersion),
-            "zip",
-            this.devBundle.artifact.classifier
-        );
-
+    public List<ArtifactRepository> getDevBundleRepositories() throws MojoExecutionException {
         List<ArtifactRepository> repositories = new ArrayList<>();
 
         if (this.devBundle.repository != null) {
@@ -380,6 +371,32 @@ public abstract class MojoBase extends AbstractMojo {
             }
         }
 
+        return repositories;
+    }
+
+    public Artifact getDevBundleArtifact(CharSequence gameVersion) {
+        return this.artifactFactory.createArtifactWithClassifier(
+            this.devBundle.artifact.groupId,
+            this.devBundle.artifact.artifactId,
+            this.devBundle.artifact.version.replace("${gameVersion}", gameVersion),
+            "zip",
+            this.devBundle.artifact.classifier
+        );
+    }
+
+    /**
+     * Resolve the dev-bundle containing useful files and get the path to it.
+     *
+     * <p>For versions that do not have a dev-bundle, null is returned.</p>
+     *
+     * @param gameVersion The game version of the dev-bundle to download.
+     * @return The path of the dev-bundle, or null if no dev-bundle was found.
+     */
+    @Nullable
+    public Path resolveDevBundle(String gameVersion) throws MojoExecutionException {
+        Artifact artifact = this.getDevBundleArtifact(gameVersion);
+
+        List<ArtifactRepository> repositories = this.getDevBundleRepositories();
 
         try {
             this.artifactResolver.resolve(artifact, repositories, this.localRepository);
@@ -389,6 +406,40 @@ public abstract class MojoBase extends AbstractMojo {
         }
 
         return artifact.getFile().toPath();
+    }
+
+    /**
+     * Resolve the Gradle module metadata artifact for an artifact.
+     *
+     * @param artifact The artifact.
+     * @return The path to the resolved .module file, or null.
+     * @throws MojoExecutionException If a repository could not be found.
+     */
+    @Nullable
+    public Path resolveGradleModuleMetadata(Artifact artifact) throws MojoExecutionException {
+        Artifact metadataArtifact = this.artifactFactory.createArtifactWithClassifier(
+            artifact.getGroupId(),
+            artifact.getArtifactId(),
+            artifact.getVersion(),
+            "module",
+            artifact.getClassifier()
+        );
+
+        List<ArtifactRepository> repositories = this.getDevBundleRepositories();
+
+        try {
+            this.artifactResolver.resolve(metadataArtifact, repositories, this.localRepository);
+        } catch (ArtifactResolutionException | ArtifactNotFoundException e) {
+            getLog().warn("No gradle module metadata for " + artifact.getArtifactId());
+            return null;
+        }
+
+        if (metadataArtifact.getFile() == null) {
+            getLog().warn("No gradle module metadata (file is null) for " + artifact.getArtifactId());
+            return null;
+        }
+
+        return metadataArtifact.getFile().toPath();
     }
 
     /**
@@ -403,10 +454,11 @@ public abstract class MojoBase extends AbstractMojo {
      * @param mappingsPath The path to put the extracted mappings.
      * @param devBundlePath The path to the dev bundle.
      * @param dependencyCoordinates The mutable list of dependency artifact coordinates.
+     * @param gameVersion The game version.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates) throws MojoExecutionException, MojoFailureException {
+    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates, String gameVersion) throws MojoExecutionException, MojoFailureException {
         try {
             URI uri = new URI("jar:" + devBundlePath.toUri());
             FileSystem devBundle = FileSystems.newFileSystem(uri, new HashMap<>());
@@ -416,7 +468,8 @@ public abstract class MojoBase extends AbstractMojo {
             if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6) {
                 getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
                     " but only 2, 3, 5 and 6 are supported. Things may not work properly. If problems occur, try" +
-                    " updating paper-nms-maven-plugin to a newer version if that exists.");
+                    " updating paper-nms-maven-plugin to a newer version if that exists. If this is a problem on" +
+                    " the latest version of paper-nms-maven-plugin, please open an issue on GitHub.");
             }
 
             JSONObject config = new JSONObject(new JSONTokener(Files.newInputStream(devBundle.getPath("config.json"))));
@@ -435,6 +488,43 @@ public abstract class MojoBase extends AbstractMojo {
                 }
             }
 
+            if (dataVersion >= 6) {
+                // In data version 6 and above, dependency information is now part of the Gradle module metadata.
+                getLog().info("Finding dependencies");
+
+                // Add paper dependencies
+                Artifact devBundleArtifact = this.getDevBundleArtifact(gameVersion);
+                Path metadata = this.resolveGradleModuleMetadata(devBundleArtifact);
+                dependencyCoordinates.addAll(
+                    this.getCompileDependenciesFromMetadata(metadata)
+                );
+
+                // Add mache dependencies (vanilla dependencies)
+                JSONObject mache = config.getJSONObject("mache");
+                JSONArray macheCoordinatesList = mache.getJSONArray("coordinates");
+                for (int i = 0; i < macheCoordinatesList.length(); i++) {
+                    String macheCoordinates = macheCoordinatesList.getString(i);
+
+                    // We remove mache from the dependencies since it cannot be found in the paper
+                    // public repo and has to be generated locally. We instead extract the dev-bundle
+                    // to get access to the game files.
+                    dependencyCoordinates.remove(macheCoordinates);
+
+                    String[] macheCoordinateParts = macheCoordinates.split(":");
+                    String groupId = macheCoordinateParts[0];
+                    String artifactId = macheCoordinateParts[1];
+                    String version = macheCoordinateParts[2];
+                    Artifact artifact = this.artifactFactory.createArtifact(
+                        groupId, artifactId, version,
+                        null, "jar"
+                    );
+                    Path macheMetadata = this.resolveGradleModuleMetadata(artifact);
+                    dependencyCoordinates.addAll(
+                        this.getCompileDependenciesFromMetadata(macheMetadata)
+                    );
+                }
+            }
+
             if (dataVersion >= 6 || buildData == null) {
                 // In data version 6 and above, buildData no longer exists and the information
                 // below is instead accessed from the json root.
@@ -450,6 +540,58 @@ public abstract class MojoBase extends AbstractMojo {
         } catch (URISyntaxException | IOException e) {
             throw new MojoExecutionException("Failed to extract dev-bundle files.", e);
         }
+    }
+
+    /**
+     * Get all required dependencies from the {@code serverCompileClasspath} variant
+     * in the Gradle module metadata.
+     *
+     * @param metadataPath The path to the metadata file.
+     * @return The list of dependencies, or empty list of no metaadata file was specified.
+     * @throws IOException If an I/O error occurs.
+     */
+    public List<String> getCompileDependenciesFromMetadata(@Nullable Path metadataPath) throws IOException {
+        if (metadataPath == null) {
+            return new ArrayList<>();
+        }
+        List<String> dependencyCoordinates = new ArrayList<>();
+
+        JSONObject module = new JSONObject(new JSONTokener(Files.newInputStream(metadataPath)));
+        String formatVersion = module.getString("formatVersion");
+        if (!"1.1".equals(formatVersion)) {
+            getLog().warn("Unsupported Gradle module metadata format version. Found format " +
+                "version " + formatVersion + " but only 1.1 is supported. Things may not work properly. " +
+                "If problems occur, try updating paper-nms-maven-plugin to a newer version if that exists. " +
+                "If this is a problem on the latest version of paper-nms-maven-plugin, please open an issue on GitHub.");
+        }
+        JSONArray variants = module.getJSONArray("variants");
+        boolean found = false;
+        for (int i = 0; i < variants.length(); i++) {
+            JSONObject variant = variants.getJSONObject(i);
+            if (!"serverCompileClasspath".equals(variant.getString("name"))) {
+                found = true;
+                continue;
+            }
+            JSONArray dependencies = variant.getJSONArray("dependencies");
+            for (int j = 0; j < dependencies.length(); j++) {
+                JSONObject dependency = dependencies.getJSONObject(j);
+                String group = dependency.getString("group");
+                String artifactId = dependency.getString("module");
+                JSONObject versionObject = dependency.getJSONObject("version");
+                if (!versionObject.has("requires")) {
+                    continue;
+                }
+                String version = versionObject.getString("requires");
+
+                dependencyCoordinates.add(
+                    group + ':' + artifactId + ':' + version
+                );
+            }
+        }
+        if (!found) {
+            getLog().warn("No serverCompileClasspath found in Gradle module metadata.");
+        }
+        return dependencyCoordinates;
     }
 
     /**
