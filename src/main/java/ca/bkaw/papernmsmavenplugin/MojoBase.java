@@ -568,10 +568,16 @@ public abstract class MojoBase extends AbstractMojo {
         boolean found = false;
         for (int i = 0; i < variants.length(); i++) {
             JSONObject variant = variants.getJSONObject(i);
-            if (!"serverCompileClasspath".equals(variant.getString("name"))) {
-                found = true;
+            JSONObject attributes = variant.getJSONObject("attributes");
+            if (attributes == null || !attributes.has("org.gradle.usage")) {
                 continue;
             }
+            // Find what gradle labels as "java-api" since that is similar to compile
+            // dependencies in a pom.xml for maven.
+            if (!"java-api".equals(attributes.getString("org.gradle.usage"))) {
+                continue;
+            }
+            found = true;
             JSONArray dependencies = variant.getJSONArray("dependencies");
             for (int j = 0; j < dependencies.length(); j++) {
                 JSONObject dependency = dependencies.getJSONObject(j);
