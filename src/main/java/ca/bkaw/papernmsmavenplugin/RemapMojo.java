@@ -138,7 +138,7 @@ public class RemapMojo extends MojoBase {
             if (Files.isDirectory(inputPath)) {
                 // A directory, we are before the package stage, we need to remap the classes
                 getLog().info("Remapping classes");
-                this.remapClasses(inputPath, mappingsPath, mappingFrom, mappingTo, classPath);
+                this.remapClassesCached(inputPath, mappingsPath, mappingFrom, mappingTo, classPath);
             } else {
                 // A file, we are at the package stage, we need to remap the jar
                 Path outputPath = cacheDirectory.resolve("remapped.jar");
@@ -161,7 +161,7 @@ public class RemapMojo extends MojoBase {
         }
     }
 
-    public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) throws MojoExecutionException {
+    public void remapClassesCached(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) throws MojoExecutionException {
         // Read information about which classes have already been remapped
         if (this.remappedClasses == null) {
             try {
@@ -194,6 +194,35 @@ public class RemapMojo extends MojoBase {
                     Files.write(path, bytes);
                     this.remappedClasses.markAsRemappedNow(path);
                 }
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to write class " + name, e);
+            }
+        });
+
+        // Finish up tiny-remapper
+        remapper.finish();
+    }
+
+    public void remapClasses(Path classesPath, Path mappingsPath, String mappingFrom, String mappingTo, List<Path> classPath) {
+        // Read the mappings
+        IMappingProvider mappings = TinyUtils.createTinyMappingProvider(mappingsPath, mappingFrom, mappingTo);
+
+        // Create the remapper
+        TinyRemapper remapper = TinyRemapper.newRemapper()
+                .withMappings(mappings)
+                .ignoreConflicts(true)
+                .build();
+
+        // Add the class path
+        remapper.readClassPath(classPath.toArray(new Path[0]));
+
+        // Add input classes
+        remapper.readInputs(classesPath);
+
+        // Run the remapper and write classes
+        remapper.apply((name, bytes) -> {
+            try {
+                Files.write(classesPath.resolve(name + ".class"), bytes);
             } catch (IOException e) {
                 throw new UncheckedIOException("Failed to write class " + name, e);
             }
