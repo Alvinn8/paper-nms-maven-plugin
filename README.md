@@ -105,6 +105,22 @@ If you are targeting Paper and do not care about Spigot compatibility, you can d
 ```
 and remove the `executions` part of the `paper-nms-maven-plugin` plugin.
 
+```diff
+ <plugin>
+     <groupId>ca.bkaw</groupId>
+     <artifactId>paper-nms-maven-plugin</artifactId>
+     <version>1.4.7</version>
+-    <executions>
+-        <execution>
+-            <phase>process-classes</phase>
+-            <goals>
+-                <goal>remap</goal>
+-            </goals>
+-        </execution>
+-    </executions>
+ </plugin>
+ ```
+
 ## Troubleshooting: `remap failed: Duplicate key`
 Delete the file `.paper-nms/classes.json` and try again.
 

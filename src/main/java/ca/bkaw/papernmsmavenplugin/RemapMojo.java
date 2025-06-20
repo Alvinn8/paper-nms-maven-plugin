@@ -19,6 +19,7 @@ import java.io.UncheckedIOException;
 import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -35,6 +36,7 @@ public class RemapMojo extends MojoBase {
         String gameVersion = this.getGameVersion();
         Path cacheDirectory = this.getCacheDirectory();
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
+        Path missingMappingsPath = Paths.get(mappingsPath + ".missing");
 
         Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
         Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
@@ -75,9 +77,26 @@ public class RemapMojo extends MojoBase {
             classPath.add(artifact.getFile().toPath());
         }
 
-        if (!Files.exists(mappingsPath) && !Files.exists(mappingsMojangPath)) {
+        if (!Files.exists(mappingsPath) && !Files.exists(missingMappingsPath) && !Files.exists(mappingsMojangPath)) {
             getLog().info("No mappings found, running init");
             this.init();
+        }
+
+        if (!Files.exists(mappingsPath) && Files.exists(missingMappingsPath)) {
+            // The mappings are missing. We cannot proceed.
+            throw new MojoFailureException("The current dev bundle does not provide mappings.\n" +
+                "The current dev bundle does not provide mappings.\n" +
+                "This usually happens when is Paper released before Spigot. This means it is not possible\n" +
+                "to remap the plugin so that it can run on a Spigot server.\n" +
+                "\n" +
+                "If you don't need to support Spigot, you can configure paper-nms-maven-plugin to not \n" +
+                "remap your plugin. This will fix this error. Please follow the instructions in the README:\n" +
+                "https://github.com/Alvinn8/paper-nms-maven-plugin#mojang-mappings-in-runtime-on-paper-1205\n" +
+                "(Mojang mappings in runtime on Paper 1.20.5+)\n" +
+                "\n" +
+                "If you need to support Spigot, you will have to wait until Spigot has been released and for\n" +
+                "Paper to release builds that include the mappings in the dev bundle.\n"
+            );
         }
 
         boolean hasMojangMappings = Files.exists(mappingsMojangPath);

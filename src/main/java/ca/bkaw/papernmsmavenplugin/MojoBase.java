@@ -40,6 +40,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
@@ -465,9 +466,9 @@ public abstract class MojoBase extends AbstractMojo {
 
             int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
 
-            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6) {
+            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6 && dataVersion != 7) {
                 getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
-                    " but only 2, 3, 5 and 6 are supported. Things may not work properly. If problems occur, try" +
+                    " but only 2, 3, 5, 6, and 7 are supported. Things may not work properly. If problems occur, try" +
                     " updating paper-nms-maven-plugin to a newer version if that exists. If this is a problem on" +
                     " the latest version of paper-nms-maven-plugin, please open an issue on GitHub.");
             }
@@ -531,11 +532,23 @@ public abstract class MojoBase extends AbstractMojo {
                 buildData = config;
             }
 
-            Path bundleMappingsPath = devBundle.getPath(buildData.getString("reobfMappingsFile"));
             Path bundlePaperclipPath = devBundle.getPath(buildData.getString("mojangMappedPaperclipFile"));
-
-            Files.copy(bundleMappingsPath, mappingsPath, StandardCopyOption.REPLACE_EXISTING);
             Files.copy(bundlePaperclipPath, paperclipPath, StandardCopyOption.REPLACE_EXISTING);
+
+            // In data version 7 (1.21.5+) the reobf mappings are optional because Paper may
+            // release before Spigot does. Use a .missing file to explicitly indicate that the
+            // mappings are missing from the dev-bundle.
+            Path missingMappingsPath = Paths.get(mappingsPath + ".missing");
+            if (buildData.has("reobfMappingsFile")) {
+                Path bundleMappingsPath = devBundle.getPath(buildData.getString("reobfMappingsFile"));
+                Files.copy(bundleMappingsPath, mappingsPath, StandardCopyOption.REPLACE_EXISTING);
+                Files.deleteIfExists(missingMappingsPath);
+            } else {
+                Files.deleteIfExists(mappingsPath);
+                try {
+                    Files.createFile(missingMappingsPath);
+                } catch (FileAlreadyExistsException ignored) {}
+            }
 
         } catch (URISyntaxException | IOException e) {
             throw new MojoExecutionException("Failed to extract dev-bundle files.", e);
