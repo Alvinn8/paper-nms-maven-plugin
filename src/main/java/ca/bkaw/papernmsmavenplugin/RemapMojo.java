@@ -34,7 +34,7 @@ public class RemapMojo extends MojoBase {
         Path inputPath = this.project.getArtifact().getFile().toPath();
 
         String gameVersion = this.getGameVersion();
-        Path cacheDirectory = this.getCacheDirectory();
+        Path cacheDirectory = this.getCacheDirectory().resolve(gameVersion);
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
         Path missingMappingsPath = Paths.get(mappingsPath + ".missing");
 

@@ -273,7 +273,7 @@ public abstract class MojoBase extends AbstractMojo {
         this.createDevBundleConfiguration();
 
         String gameVersion = this.getGameVersion();
-        Path cacheDirectory = this.getCacheDirectory();
+        Path cacheDirectory = this.getCacheDirectory().resolve(gameVersion);
 
         String extra = !"paper-nms".equals(this.devBundle.id) ? " (" + this.devBundle.id + ")" : "";
         getLog().info("Initializing paper-nms for game version: " + gameVersion + extra);
