@@ -596,8 +596,11 @@ public abstract class MojoBase extends AbstractMojo {
                 JSONObject dependency = dependencies.getJSONObject(j);
                 String group = dependency.getString("group");
                 String artifactId = dependency.getString("module");
-                JSONObject versionObject = dependency.getJSONObject("version");
-                if (!versionObject.has("requires")) {
+                JSONObject versionObject = dependency.has("version") ? dependency.getJSONObject("version") : null;
+                if (versionObject == null || !versionObject.has("requires")) {
+                    dependencyCoordinates.add(
+                        group + ':' + artifactId
+                    );
                     continue;
                 }
                 String version = versionObject.getString("requires");
@@ -1126,12 +1129,14 @@ public abstract class MojoBase extends AbstractMojo {
                 String[] coordinates = dependency.split(":");
                 String groupId = coordinates[0];
                 String artifactId = coordinates[1];
-                String version = coordinates[2];
+                String version = coordinates.length > 2 ? coordinates[2] : null;
 
                 pom.append("<dependency>\n");
                 pom.append("    <groupId>").append(groupId).append("</groupId>\n");
                 pom.append("    <artifactId>").append(artifactId).append("</artifactId>\n");
-                pom.append("    <version>").append(version).append("</version>\n");
+                if (version != null) {
+                    pom.append("    <version>").append(version).append("</version>\n");
+                }
                 pom.append("</dependency>\n");
             }
             pom.append("  </dependencies>\n");

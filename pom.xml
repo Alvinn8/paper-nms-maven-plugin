@@ -6,7 +6,7 @@
 
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms-maven-plugin</artifactId>
-    <version>1.4.9</version>
+    <version>1.4.10-SNAPSHOT</version>
 
     <packaging>maven-plugin</packaging>
 
