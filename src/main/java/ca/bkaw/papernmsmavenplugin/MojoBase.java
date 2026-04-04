@@ -141,7 +141,7 @@ public abstract class MojoBase extends AbstractMojo {
                 String version = dependency.getVersion();
                 // Note: even though Paper does not use the "-R0.1-SNAPSHOT" suffix anymore for versions past MC 26.1,
                 // paper-nmv-maven-plugin still requires the "-SNAPSHOT" suffix in the dependency declaration.
-                return version.substring(0, version.indexOf('-'));
+                return version.substring(0, version.length() - 9/* Number of characters for "-SNAPSHOT" */);
             }
         }
         throw new MojoFailureException("Unable to find the version to use.\n" +
