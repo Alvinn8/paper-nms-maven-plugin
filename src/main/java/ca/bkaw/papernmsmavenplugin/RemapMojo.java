@@ -34,6 +34,13 @@ public class RemapMojo extends MojoBase {
         Path inputPath = this.project.getArtifact().getFile().toPath();
 
         String gameVersion = this.getGameVersion();
+        if (!gameVersion.startsWith("1.")) {
+            // We are probably on Minecraft 26.1.1 or newer.
+            // No remapping is necessary because both Vanilla and Spigot now run with unobfuscated bytecode.
+            getLog().warn("Remapping is not supported for MC 26.1 and later.");
+            return;
+        }
+
         Path cacheDirectory = this.getCacheDirectory().resolve(gameVersion);
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
         Path missingMappingsPath = Paths.get(mappingsPath + ".missing");
