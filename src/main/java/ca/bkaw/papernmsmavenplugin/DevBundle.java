@@ -16,7 +16,7 @@ public class DevBundle {
         new Artifact(
             "io.papermc.paper",
             "dev-bundle",
-            "${gameVersion}-R0.1-SNAPSHOT"
+            "${gameVersion}"
         )
     );
 
