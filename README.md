@@ -6,6 +6,13 @@ This plugin will both create the mapped paper dependency and install it to your 
 > [!NOTE]
 > This is an unofficial plugin. You probably want to use Gradle and the officially supported [paperweight-userdev](https://github.com/PaperMC/paperweight-test-plugin) plugin instead. Do not ask PaperMC for support regarding this plugin. Instead, direct message `alvinn8` on discord and I will try to help you.
 
+## How to update to 26.1.1
+The latest snapshot release of `paper-nms-maven-plugin` supports Paper 26.1.1. However, the way the version is specified may change soon to avoid the `-SNAPSHOT` suffix.
+
+**To use 26.1.1 do the following:**
+
+Update paper-nms-maven-plugin to `1.4.11-SNAPSHOT` and change the version of the `paper-nms` dependency to `26.1.1.build.14-alpha-SNAPSHOT`. Replace `build.14-alpha` with the build you want to use (probably the latest).
+
 ## Usage (IntelliJ)
 1. Add `.paper-nms` to your `.gitignore`.
 
