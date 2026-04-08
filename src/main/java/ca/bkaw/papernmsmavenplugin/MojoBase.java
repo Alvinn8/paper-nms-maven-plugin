@@ -97,7 +97,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @return The path to the cache directory.
      */
     public Path getCacheDirectory() {
-        MavenProject project = this.project.hasParent() ? this.project.getParent() : this.project;
+        MavenProject project = this.project.hasParent() && this.project.getParent().getBasedir() != null ? this.project.getParent() : this.project;
 
         return project.getBasedir().toPath().resolve(".paper-nms");
     }
