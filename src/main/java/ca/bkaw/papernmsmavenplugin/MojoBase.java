@@ -139,7 +139,9 @@ public abstract class MojoBase extends AbstractMojo {
 
             if (this.getNmsGroupId().equals(dependency.getGroupId()) && this.devBundle.id.equals(dependency.getArtifactId())) {
                 String version = dependency.getVersion();
-                return version.substring(0, version.indexOf('-'));
+                // Note: even though Paper does not use the "-R0.1-SNAPSHOT" suffix anymore for versions past MC 26.1,
+                // paper-nmv-maven-plugin still requires the "-SNAPSHOT" suffix in the dependency declaration.
+                return version.substring(0, version.length() - 9/* Number of characters for "-SNAPSHOT" */);
             }
         }
         throw new MojoFailureException("Unable to find the version to use.\n" +
@@ -379,10 +381,22 @@ public abstract class MojoBase extends AbstractMojo {
         return this.artifactFactory.createArtifactWithClassifier(
             this.devBundle.artifact.groupId,
             this.devBundle.artifact.artifactId,
-            this.devBundle.artifact.version.replace("${gameVersion}", gameVersion),
+            replaceGameVersion(this.devBundle.artifact.version, gameVersion),
             "zip",
             this.devBundle.artifact.classifier
         );
+    }
+
+    private static String replaceGameVersion(String artifactVersion, CharSequence gameVersion) {
+        // From Minecraft 26.1.1 onwards, Paper no longer uses the "-R0.1-SNAPSHOT" suffix.
+
+        String newArtifactVersion = artifactVersion.replace("${gameVersion}", gameVersion);
+
+        if ("1.".contentEquals(gameVersion.subSequence(0, 2))) {
+            newArtifactVersion += "-R0.1-SNAPSHOT";
+        } // else: We are on Paper 26.1.1 or newer. There is no custom suffix anymore.
+
+        return newArtifactVersion;
     }
 
     /**

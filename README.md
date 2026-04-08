@@ -150,8 +150,9 @@ This is done by configuring the plugin as follows.
             <artifact>
                 <groupId>com.example.paperfork</groupId>
                 <artifactId>dev-bundle</artifactId>
-                <version>${gameVersion}-R0.1-SNAPSHOT</version>
-                <!-- ${gameVersion} will be replaced with the game version to use -->
+                <version>${gameVersion}</version>
+                <!-- ${gameVersion} will be replaced with the game version to use.
+                     paper-nms-maven-plugin will take care of the '-R0.1-SNAPSHOT' suffix handling. -->
             </artifact>
         </devBundle>
     </configuration>
