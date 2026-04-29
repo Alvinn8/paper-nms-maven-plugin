@@ -16,6 +16,8 @@ import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
 import org.apache.maven.artifact.resolver.ArtifactResolutionException;
 import org.apache.maven.artifact.resolver.ArtifactResolver;
 import org.apache.maven.model.Dependency;
+import org.apache.maven.model.Model;
+import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -290,6 +292,7 @@ public abstract class MojoBase extends AbstractMojo {
         Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
         Path mappedServerPath = cacheDirectory.resolve("mapped_"+ gameVersion +".jar");
         List<String> dependencyCoordinates = new ArrayList<>();
+        List<String> dependencyManagementCoordinates = new ArrayList<>();
 
         getLog().info("Downloading dev-bundle");
         Path devBundlePath = this.resolveDevBundle(gameVersion);
@@ -297,7 +300,7 @@ public abstract class MojoBase extends AbstractMojo {
         if (devBundlePath != null) {
             getLog().info("Extracting dev-bundle");
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
-            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates, gameVersion);
+            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates, dependencyManagementCoordinates, gameVersion);
 
             getLog().info("Extracting server");
             this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
@@ -334,7 +337,7 @@ public abstract class MojoBase extends AbstractMojo {
 
         getLog().info("Installing into local maven repository");
         Path pomPath = cacheDirectory.resolve("pom.xml");
-        this.installToMavenRepo(gameVersion, dependencyCoordinates, mappedServerPath, pomPath);
+        this.installToMavenRepo(gameVersion, dependencyCoordinates, dependencyManagementCoordinates, mappedServerPath, pomPath);
     }
 
     /**
@@ -457,6 +460,31 @@ public abstract class MojoBase extends AbstractMojo {
         return metadataArtifact.getFile().toPath();
     }
 
+    @Nullable
+    public Path resolvePom(Artifact artifact) throws MojoExecutionException {
+        Artifact pomArtifact = this.artifactFactory.createProjectArtifact(
+            artifact.getGroupId(),
+            artifact.getArtifactId(),
+            artifact.getVersion()
+        );
+
+        List<ArtifactRepository> repositories = this.getDevBundleRepositories();
+
+        try {
+            this.artifactResolver.resolve(pomArtifact, repositories, this.localRepository);
+        } catch (ArtifactResolutionException | ArtifactNotFoundException e) {
+            getLog().warn("No pom.xml found for " + artifact.getArtifactId());
+            return null;
+        }
+
+        if (pomArtifact.getFile() == null) {
+            getLog().warn("No pom.xml found (file is null) for " + artifact.getArtifactId());
+            return null;
+        }
+
+        return pomArtifact.getFile().toPath();
+    }
+
     /**
      * Extract the needed files from the dev bundle. Will extract the mapped paperclip
      * jar and the mappings.
@@ -469,11 +497,12 @@ public abstract class MojoBase extends AbstractMojo {
      * @param mappingsPath The path to put the extracted mappings.
      * @param devBundlePath The path to the dev bundle.
      * @param dependencyCoordinates The mutable list of dependency artifact coordinates.
+     * @param dependencyManagementCoordinates A mutable list of dependency management artifact coordinates.
      * @param gameVersion The game version.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates, String gameVersion) throws MojoExecutionException, MojoFailureException {
+    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates, String gameVersion) throws MojoExecutionException, MojoFailureException {
         try {
             URI uri = new URI("jar:" + devBundlePath.toUri());
             FileSystem devBundle = FileSystems.newFileSystem(uri, new HashMap<>());
@@ -564,6 +593,28 @@ public abstract class MojoBase extends AbstractMojo {
                 } catch (FileAlreadyExistsException ignored) {}
             }
 
+            // Find adventure BOM dependency management artifact.
+            Artifact paperApiArtifact = dependencyCoordinates.stream()
+                .filter(dep -> dep.startsWith("io.papermc.paper:paper-api:"))
+                .findFirst()
+                .map(paperApiCoordinates -> {
+                    String[] parts = paperApiCoordinates.split(":");
+                    String groupId = parts[0];
+                    String artifactId = parts[1];
+                    String version = parts[2];
+                    return this.artifactFactory.createArtifact(
+                        groupId, artifactId, version,
+                        null, "jar"
+                    );
+                }).orElse(null);
+
+            if (paperApiArtifact != null) {
+                Path pomPath = this.resolvePom(paperApiArtifact);
+                dependencyManagementCoordinates.addAll(
+                    this.getDependencyManagementFromPom(pomPath)
+                );
+            }
+
         } catch (URISyntaxException | IOException e) {
             throw new MojoExecutionException("Failed to extract dev-bundle files.", e);
         }
@@ -628,6 +679,35 @@ public abstract class MojoBase extends AbstractMojo {
             getLog().warn("No serverCompileClasspath found in Gradle module metadata.");
         }
         return dependencyCoordinates;
+    }
+
+    /**
+     * Get all dependency management dependencies from the pom.xml.
+     *
+     * @param pomPath The path to the pom.xml file.
+     * @return The list of dependency management dependency coordinates.
+     */
+    public List<String> getDependencyManagementFromPom(@Nullable Path pomPath) {
+        if (pomPath == null) {
+            return new ArrayList<>();
+        }
+
+        List<String> dependencyManagementCoordinates = new ArrayList<>();
+        try {
+            Model model = new MavenXpp3Reader().read(Files.newBufferedReader(pomPath));
+            if (model.getDependencyManagement() == null) {
+                return dependencyManagementCoordinates;
+            }
+            for (Dependency dependency : model.getDependencyManagement().getDependencies()) {
+                dependencyManagementCoordinates.add(
+                    dependency.getGroupId() + ':' + dependency.getArtifactId() + ':' + dependency.getVersion()
+                );
+            }
+        } catch (Exception e) {
+            getLog().warn("Failed to read dependency management from pom.xml at " + pomPath, e);
+        }
+
+        return dependencyManagementCoordinates;
     }
 
     /**
@@ -1104,11 +1184,12 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param gameVersion The game version.
      * @param dependencyCoordinates A list of coordinates of dependencies.
+     * @param dependencyManagementCoordinates A list of coordinates of dependency management dependencies.
      * @param mappedServerPath The path to the mapped server jar to install.
      * @param pomPath The path to the pom file that will be generated.
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, Path mappedServerPath, Path pomPath) throws MojoExecutionException {
+    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates, Path mappedServerPath, Path pomPath) throws MojoExecutionException {
         StringBuilder pom = new StringBuilder()
             .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             .append("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\" xmlns=\"http://maven.apache.org/POM/4.0.0\"\n")
@@ -1117,6 +1198,30 @@ public abstract class MojoBase extends AbstractMojo {
             .append("  <groupId>").append(this.getNmsGroupId()).append("</groupId>\n")
             .append("  <artifactId>").append(this.devBundle.id).append("</artifactId>\n")
             .append("  <version>").append(gameVersion).append("-SNAPSHOT</version>\n");
+
+        // Add dependency management
+        if (!dependencyManagementCoordinates.isEmpty()) {
+            pom.append("\n");
+            pom.append("  <dependencyManagement>\n");
+            pom.append("    <dependencies>\n");
+            for (String dependency : dependencyManagementCoordinates) {
+                // groupId:artifactId:version
+                String[] coordinates = dependency.split(":");
+                String groupId = coordinates[0];
+                String artifactId = coordinates[1];
+                String version = coordinates[2];
+
+                pom.append("<dependency>\n");
+                pom.append("    <groupId>").append(groupId).append("</groupId>\n");
+                pom.append("    <artifactId>").append(artifactId).append("</artifactId>\n");
+                pom.append("    <version>").append(version).append("</version>\n");
+                pom.append("    <type>pom</type>\n");
+                pom.append("    <scope>import</scope>\n");
+                pom.append("</dependency>\n");
+            }
+            pom.append("    </dependencies>\n");
+            pom.append("  </dependencyManagement>\n");
+        }
 
         // Add dependencies
         if (!dependencyCoordinates.isEmpty()) {
