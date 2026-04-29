@@ -509,9 +509,9 @@ public abstract class MojoBase extends AbstractMojo {
 
             int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
 
-            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6 && dataVersion != 7) {
+            if (dataVersion != 3 && dataVersion != 2 && dataVersion != 5 && dataVersion != 6 && dataVersion != 7 && dataVersion != 8) {
                 getLog().warn("Unsupported dev-bundle version. Found data version " + dataVersion +
-                    " but only 2, 3, 5, 6, and 7 are supported. Things may not work properly. If problems occur, try" +
+                    " but only 2–3 and 5–8 are supported. Things may not work properly. If problems occur, try" +
                     " updating paper-nms-maven-plugin to a newer version if that exists. If this is a problem on" +
                     " the latest version of paper-nms-maven-plugin, please open an issue on GitHub.");
             }
