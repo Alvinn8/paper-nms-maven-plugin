@@ -38,6 +38,16 @@ public class RemapMojo extends MojoBase {
             // We are probably on Minecraft 26.1.1 or newer.
             // No remapping is necessary because both Vanilla and Spigot now run with unobfuscated bytecode.
             getLog().warn("Remapping is not supported for MC 26.1 and later.");
+            getLog().warn("Please remove the remap goal from your build configuration.");
+            getLog().warn("Remove this from the pom.xml:");
+            getLog().warn("    <executions>");
+            getLog().warn("        <execution>");
+            getLog().warn("            <phase>process-classes</phase>");
+            getLog().warn("            <goals>");
+            getLog().warn("                <goal>remap</goal>");
+            getLog().warn("            </goals>");
+            getLog().warn("        </execution>");
+            getLog().warn("    </executions>");
             return;
         }
 
