@@ -23,7 +23,7 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 
-@Mojo(name = "remap", defaultPhase = LifecyclePhase.PACKAGE)
+@Mojo(name = "remap", defaultPhase = LifecyclePhase.PACKAGE, threadSafe = true)
 public class RemapMojo extends MojoBase {
     private RemappedClasses remappedClasses;
 
