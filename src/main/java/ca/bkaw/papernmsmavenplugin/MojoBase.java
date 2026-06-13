@@ -8,6 +8,8 @@ import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.factory.ArtifactFactory;
 import org.apache.maven.artifact.installer.ArtifactInstallationException;
 import org.apache.maven.artifact.installer.ArtifactInstaller;
+import org.apache.maven.artifact.metadata.ArtifactMetadataRetrievalException;
+import org.apache.maven.artifact.metadata.ArtifactMetadataSource;
 import org.apache.maven.artifact.repository.ArtifactRepository;
 import org.apache.maven.artifact.repository.ArtifactRepositoryPolicy;
 import org.apache.maven.artifact.repository.MavenArtifactRepository;
@@ -15,6 +17,9 @@ import org.apache.maven.artifact.repository.layout.DefaultRepositoryLayout;
 import org.apache.maven.artifact.resolver.ArtifactNotFoundException;
 import org.apache.maven.artifact.resolver.ArtifactResolutionException;
 import org.apache.maven.artifact.resolver.ArtifactResolver;
+import org.apache.maven.artifact.versioning.ArtifactVersion;
+import org.apache.maven.artifact.versioning.InvalidVersionSpecificationException;
+import org.apache.maven.artifact.versioning.VersionRange;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.model.Model;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
@@ -87,6 +92,9 @@ public abstract class MojoBase extends AbstractMojo {
     @Component
     ArtifactResolver artifactResolver;
 
+    @Component
+    ArtifactMetadataSource artifactMetadataSource;
+
     @Parameter( property = "devBundle" )
     DevBundle devBundle;
 
@@ -130,11 +138,94 @@ public abstract class MojoBase extends AbstractMojo {
     }
 
     /**
+     * Get the version of the NMS dependency that the user has specified in their pom.xml.
+     *
+     * @return The version.
+     * @throws MojoFailureException If no version is found.
+     */
+    public String getUserVersion() throws MojoFailureException {
+        for (Object object : this.project.getDependencies()) {
+            Dependency dependency = (Dependency) object;
+
+            if (this.getNmsGroupId().equals(dependency.getGroupId()) && this.devBundle.id.equals(dependency.getArtifactId())) {
+				return dependency.getVersion();
+            }
+        }
+
+        throw new MojoFailureException("Unable to find the version to use.\n" +
+            "Unable to find the version to use. Make sure you have the following dependency in your <dependencies> tag:" +
+            "\n" +
+            "\n<dependency>" +
+            "\n    <groupId>"+ this.getNmsGroupId() +"</groupId>" +
+            "\n    <artifactId>"+ this.devBundle.id +"</artifactId>" +
+            "\n    <version>your version here</version>" +
+            "\n    <scope>provided</scope>" +
+            "\n</dependency>" +
+            "\n" +
+            "\nReplacing \"your version here\" with the desired version." +
+            "\nSee the README for more information on what version to use." +
+            "\nYou can for example specify a version range, or an exact version." +
+            "\n" +
+            "\nREADME:" +
+            "\nhttps://github.com/Alvinn8/paper-nms-maven-plugin" +
+            "\n"
+        );
+    }
+
+    public String getGameVersionFor(String userVersion) throws MojoFailureException {
+        // 1.21.9-R0.1-SNAPSHOT -> 1.21.9
+        if (userVersion.endsWith("-R0.1-SNAPSHOT")) {
+            return userVersion.substring(0, userVersion.length() - "-R0.1-SNAPSHOT".length());
+        }
+
+        // 26.1.2.build.68-stable-SNAPSHOT -> 26.1.2
+        if (userVersion.contains(".build.") && userVersion.endsWith("-SNAPSHOT")) {
+            int buildIndex = userVersion.indexOf(".build.");
+            return userVersion.substring(0, buildIndex);
+        }
+
+        // 1.21.9-SNAPSHOT -> 1.21.9
+        if (userVersion.endsWith("-SNAPSHOT")) {
+            return userVersion.substring(0, userVersion.length() - "-SNAPSHOT".length());
+        }
+
+        // 26.1.2.build.68-stable -> 26.1.2
+        if (userVersion.contains(".build.")) {
+            int buildIndex = userVersion.indexOf(".build.");
+            return userVersion.substring(0, buildIndex);
+        }
+
+        // [26.1.2.build,) -> 26.1.2
+        if (userVersion.startsWith("[") && userVersion.contains(".build,") && userVersion.endsWith(")")) {
+            int buildIndex = userVersion.indexOf(".build,");
+            return userVersion.substring(1, buildIndex);
+        }
+
+        throw new MojoFailureException("Unable to determine game version from version." +
+            "\nUnable to determine game version from version: " + userVersion +
+            "\n" +
+            "\nSee the README for what values you can use as a version." +
+            "\n" +
+            "\nIf you are using a version you think should work, especially if you are using" +
+            "\na range, please open an issue on GitHub." +
+            "\n" +
+            "\nREADME:" +
+            "\nhttps://github.com/Alvinn8/paper-nms-maven-plugin" +
+            "\n" +
+            "\nIssues:" +
+            "\nhttps://github.com/Alvinn8/paper-nms-maven-plugin/issues" +
+            "\n"
+        );
+    }
+
+    /**
      * Get the game version the user desires to use for this project.
      *
      * @return The game version.
      * @throws MojoFailureException If no version is found.
+     * @deprecated Use #getVersion() instead.
      */
+    @Deprecated
     public String getGameVersion() throws MojoFailureException {
         for (Object object : this.project.getDependencies()) {
             Dependency dependency = (Dependency) object;
@@ -276,11 +367,29 @@ public abstract class MojoBase extends AbstractMojo {
     public void init() throws MojoExecutionException, MojoFailureException {
         this.createDevBundleConfiguration();
 
-        String gameVersion = this.getGameVersion();
+        // The version that the user has specified for the nms dependency in the pom.xml.
+        // This may be an exact version to use for a dev-bundle, such as "26.1.2.build.68-stable"
+        // or "1.21.9-R0.1-SNAPSHOT". It may also be a version range such as "[26.1.2.build,)".
+        // Furthermore, it may also use the old format used by paper-nms-maven-plugin in
+        // the form: "1.21.9-SNAPSHOT".
+        String userVersion = this.getUserVersion();
+
+        // The exact version of the dependency to install into the local maven repository.
+        // In many cases, this is the same as the user version and has to be for maven to
+        // be able to resolve the dependency. However, if the user version is a range then
+        // the exact version will be a specific build that Maven can then resolve using
+        // the range.
+        String exactVersion = userVersion;
+
+        // The version of the game. For example, "26.1.2", "1.21.9-rc1", "1.20.4", etc.
+        // This should not be used to resolve dev bundle versions, unless the user is
+        // using the old format of specifying game versions (e.g. "1.21.9-SNAPSHOT").
+        String gameVersion = this.getGameVersionFor(userVersion);
+
         Path cacheDirectory = this.getCacheDirectory().resolve(gameVersion);
 
         String extra = !"paper-nms".equals(this.devBundle.id) ? " (" + this.devBundle.id + ")" : "";
-        getLog().info("Initializing paper-nms for game version: " + gameVersion + extra);
+        getLog().info("Initializing paper-nms for version: " + gameVersion + extra);
 
         getLog().info("Preparing cache folder");
         try {
@@ -289,34 +398,41 @@ public abstract class MojoBase extends AbstractMojo {
             throw new MojoExecutionException("Failed to create .paper-nms cache folder.", e);
         }
 
-        Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
-        Path mappedServerPath = cacheDirectory.resolve("mapped_"+ gameVersion +".jar");
+        Path mappingsPath = cacheDirectory.resolve("mappings.tiny");
+        Path mappedServerPath = cacheDirectory.resolve("mapped.jar");
         List<String> dependencyCoordinates = new ArrayList<>();
         List<String> dependencyManagementCoordinates = new ArrayList<>();
 
         getLog().info("Downloading dev-bundle");
-        Path devBundlePath = this.resolveDevBundle(gameVersion);
+        Artifact devBundleArtifact = this.resolveDevBundle(userVersion);
 
-        if (devBundlePath != null) {
+        if (devBundleArtifact != null) {
+            // Update the exact version with the concrete version that was resolved. If the
+            // user version was a range, this is the specific build it resolved to.
+            exactVersion = devBundleArtifact.getVersion();
+            System.out.println("Resolved dev bundle version: " + exactVersion);
+        }
+
+        if (devBundleArtifact != null) {
             getLog().info("Extracting dev-bundle");
             Path paperclipPath = cacheDirectory.resolve("paperclip.jar");
-            this.extractDevBundle(paperclipPath, mappingsPath, devBundlePath, dependencyCoordinates, dependencyManagementCoordinates, gameVersion);
+            this.extractDevBundle(paperclipPath, mappingsPath, devBundleArtifact, dependencyCoordinates, dependencyManagementCoordinates);
 
             getLog().info("Extracting server");
-            this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
+            this.extractServerJar(cacheDirectory, mappedServerPath);
         } else if (this.devBundle == DevBundle.PAPER_DEV_BUNDLE) {
             // No dev-bundle exists for this version, let's create
             // mappings and map the jar manually.
 
-            Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
-            Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
+            Path mappingsMojangPath = cacheDirectory.resolve("mappings_mojang.tiny");
+            Path mappingsSpigotPath = cacheDirectory.resolve("mappings_spigot.tiny");
 
             Path mojangMappingsPath = cacheDirectory.resolve("mojang_mappings.txt");
             this.downloadMojangMappings(mojangMappingsPath, gameVersion);
 
             getLog().info("Downloading spigot mappings");
-            Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings_"+ gameVersion +".csrg");
-            Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings_"+ gameVersion +".csrg");
+            Path spigotClassMappingsPath = cacheDirectory.resolve("spigot_class_mappings.csrg");
+            Path spigotMemberMappingsPath = cacheDirectory.resolve("spigot_member_mappings.csrg");
             this.downloadSpigotMappings(spigotClassMappingsPath, spigotMemberMappingsPath, gameVersion);
 
             getLog().info("Merging mappings");
@@ -327,17 +443,19 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Extracting paper");
             Path paperPath = cacheDirectory.resolve("paper.jar");
-            this.extractServerJar(gameVersion, cacheDirectory, paperPath);
+            this.extractServerJar(cacheDirectory, paperPath);
 
             getLog().info("Mapping paper jar");
             this.mapPaperJar(mappingsPath, paperPath, mappedServerPath);
         } else {
-            throw new MojoFailureException("No dev bundle was found for version " + gameVersion);
+            throw new MojoFailureException("No dev bundle was found for version " + userVersion);
         }
 
+        // Install the exact version into the local maven repository. In case the user
+        // specified a range, Maven will resolve to the exact version automatically.
         getLog().info("Installing into local maven repository");
         Path pomPath = cacheDirectory.resolve("pom.xml");
-        this.installToMavenRepo(gameVersion, dependencyCoordinates, dependencyManagementCoordinates, mappedServerPath, pomPath);
+        this.installToMavenRepo(exactVersion, dependencyCoordinates, dependencyManagementCoordinates, mappedServerPath, pomPath);
     }
 
     /**
@@ -380,11 +498,11 @@ public abstract class MojoBase extends AbstractMojo {
         return repositories;
     }
 
-    public Artifact getDevBundleArtifact(CharSequence gameVersion) {
+    public Artifact getDevBundleArtifact(String version) {
         return this.artifactFactory.createArtifactWithClassifier(
             this.devBundle.artifact.groupId,
             this.devBundle.artifact.artifactId,
-            replaceGameVersion(this.devBundle.artifact.version, gameVersion),
+            version,
             "zip",
             this.devBundle.artifact.classifier
         );
@@ -407,23 +525,55 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * <p>For versions that do not have a dev-bundle, null is returned.</p>
      *
-     * @param gameVersion The game version of the dev-bundle to download.
-     * @return The path of the dev-bundle, or null if no dev-bundle was found.
+     * @param userVersion The version that the user specified.
+     * @return The resolved dev-bundle artifact, or null if no dev-bundle was found.
      */
     @Nullable
-    public Path resolveDevBundle(String gameVersion) throws MojoExecutionException {
-        Artifact artifact = this.getDevBundleArtifact(gameVersion);
-
+    public Artifact resolveDevBundle(String userVersion) throws MojoExecutionException {
         List<ArtifactRepository> repositories = this.getDevBundleRepositories();
+
+        // Try to find the version that the user specified. If an exact version was
+        // specified, this is used as-is. If a version range was specified, the latest
+        // version that fits within the range is selected, like Maven normally resolves
+        // version ranges.
+        Artifact artifact = this.getDevBundleArtifact(userVersion);
+
+        try {
+            VersionRange versionRange = VersionRange.createFromVersionSpec(userVersion);
+            if (versionRange.hasRestrictions()) {
+                // The user specified a version range. Retrieve the available versions
+                // and select the latest one that fits within the range.
+                artifact.setVersionRange(versionRange);
+
+                List<ArtifactVersion> availableVersions;
+                try {
+                    availableVersions = this.artifactMetadataSource.retrieveAvailableVersions(artifact, this.localRepository, repositories);
+                } catch (ArtifactMetadataRetrievalException e) {
+                    throw new MojoExecutionException("Failed to retrieve available dev-bundle versions for version range " + userVersion, e);
+                }
+
+                ArtifactVersion selectedVersion = versionRange.matchVersion(availableVersions);
+                if (selectedVersion == null) {
+                    getLog().info("No dev bundle was found matching version range " + userVersion);
+                    return null;
+                }
+
+                // Replace the range with the concrete version that was selected so the
+                // artifact can be resolved and so that callers can read the exact version.
+                artifact.selectVersion(selectedVersion.toString());
+            }
+        } catch (InvalidVersionSpecificationException ignored) {
+            // The user version is not a version range, treat it as an exact version.
+        }
 
         try {
             this.artifactResolver.resolve(artifact, repositories, this.localRepository);
         } catch (ArtifactResolutionException | ArtifactNotFoundException e) {
-            getLog().info("No dev bundle was found for version " + gameVersion);
+            getLog().info("No dev bundle was found for version " + userVersion);
             return null;
         }
 
-        return artifact.getFile().toPath();
+        return artifact;
     }
 
     /**
@@ -495,16 +645,15 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param paperclipPath The path to put the mapped paperclip jar.
      * @param mappingsPath The path to put the extracted mappings.
-     * @param devBundlePath The path to the dev bundle.
+     * @param devBundleArtifact The dev bundle artifact.
      * @param dependencyCoordinates The mutable list of dependency artifact coordinates.
      * @param dependencyManagementCoordinates A mutable list of dependency management artifact coordinates.
-     * @param gameVersion The game version.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Path devBundlePath, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates, String gameVersion) throws MojoExecutionException, MojoFailureException {
+    public void extractDevBundle(Path paperclipPath, Path mappingsPath, Artifact devBundleArtifact, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates) throws MojoExecutionException, MojoFailureException {
         try {
-            URI uri = new URI("jar:" + devBundlePath.toUri());
+            URI uri = new URI("jar:" + devBundleArtifact.getFile().toURI());
             FileSystem devBundle = FileSystems.newFileSystem(uri, new HashMap<>());
 
             int dataVersion = Integer.parseInt(String.join("", Files.readAllLines(devBundle.getPath("data-version.txt"))).trim());
@@ -537,7 +686,6 @@ public abstract class MojoBase extends AbstractMojo {
                 getLog().info("Finding dependencies");
 
                 // Add paper dependencies
-                Artifact devBundleArtifact = this.getDevBundleArtifact(gameVersion);
                 Path metadata = this.resolveGradleModuleMetadata(devBundleArtifact);
                 dependencyCoordinates.addAll(
                     this.getCompileDependenciesFromMetadata(metadata)
@@ -936,13 +1084,12 @@ public abstract class MojoBase extends AbstractMojo {
      * <p>This method will also clean up the directories that paperclip generate in
      * the cache folder.</p>
      *
-     * @param gameVersion The game version.
      * @param cacheDirectory The cache directory.
      * @param serverPath The path to put the extracted server jar.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractServerJar(String gameVersion, Path cacheDirectory, Path serverPath) throws MojoExecutionException, MojoFailureException {
+    public void extractServerJar(Path cacheDirectory, Path serverPath) throws MojoExecutionException, MojoFailureException {
         String javaExecutable;
         Path bin = Paths.get(System.getProperty("java.home"), "bin");
         Path javaPath = bin.resolve("java");
@@ -1033,7 +1180,7 @@ public abstract class MojoBase extends AbstractMojo {
             }
         }
         if (extractedServerPath == null) {
-            extractedServerPath = cacheDirectory.resolve("cache").resolve("patched_" + gameVersion + ".jar");
+            extractedServerPath = cacheDirectory.resolve("cache").resolve("patched.jar");
             if (!Files.exists(extractedServerPath)) {
                 throw new MojoExecutionException("Unable to find the patched server jar");
             }
@@ -1182,14 +1329,14 @@ public abstract class MojoBase extends AbstractMojo {
      * used to populate the dependencies for the pom. If it is not provided no
      * repositories nor dependencies will be added.</p>
      *
-     * @param gameVersion The game version.
+     * @param exactVersion The version of the artifact.
      * @param dependencyCoordinates A list of coordinates of dependencies.
      * @param dependencyManagementCoordinates A list of coordinates of dependency management dependencies.
      * @param mappedServerPath The path to the mapped server jar to install.
      * @param pomPath The path to the pom file that will be generated.
      * @throws MojoExecutionException If something goes wrong.
      */
-    public void installToMavenRepo(String gameVersion, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates, Path mappedServerPath, Path pomPath) throws MojoExecutionException {
+    public void installToMavenRepo(String exactVersion, List<String> dependencyCoordinates, List<String> dependencyManagementCoordinates, Path mappedServerPath, Path pomPath) throws MojoExecutionException {
         StringBuilder pom = new StringBuilder()
             .append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
             .append("<project xsi:schemaLocation=\"http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd\" xmlns=\"http://maven.apache.org/POM/4.0.0\"\n")
@@ -1197,7 +1344,7 @@ public abstract class MojoBase extends AbstractMojo {
             .append("  <modelVersion>4.0.0</modelVersion>\n")
             .append("  <groupId>").append(this.getNmsGroupId()).append("</groupId>\n")
             .append("  <artifactId>").append(this.devBundle.id).append("</artifactId>\n")
-            .append("  <version>").append(gameVersion).append("-SNAPSHOT</version>\n");
+            .append("  <version>").append(exactVersion).append("</version>\n");
 
         // Add dependency management
         if (!dependencyManagementCoordinates.isEmpty()) {
@@ -1270,7 +1417,7 @@ public abstract class MojoBase extends AbstractMojo {
         }
 
         try {
-            this.installViaArtifactInstaller(mappedServerPath, pomPath, gameVersion);
+            this.installViaArtifactInstaller(mappedServerPath, pomPath, exactVersion);
         } catch (ArtifactInstallationException e) {
             throw new MojoExecutionException("Failed to install mapped server jar to local repository.", e);
         }
@@ -1296,11 +1443,11 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param artifactPath The path to the artifact to install.
      * @param pomPath The path to the pom to install with it.
-     * @param gameVersion The game version.
+     * @param exactVersion The version of the artifact.
      * @throws ArtifactInstallationException If something goes wrong.
      */
-    private void installViaArtifactInstaller(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
-        Artifact artifact = this.artifactFactory.createArtifactWithClassifier(this.getNmsGroupId(), this.devBundle.id, gameVersion + "-SNAPSHOT", "jar", null);
+    private void installViaArtifactInstaller(Path artifactPath, Path pomPath, String exactVersion) throws ArtifactInstallationException {
+        Artifact artifact = this.artifactFactory.createArtifactWithClassifier(this.getNmsGroupId(), this.devBundle.id, exactVersion, "jar", null);
 
         // Add pom
         ProjectArtifactMetadata pomMetadata = new ProjectArtifactMetadata(artifact, pomPath.toFile());
@@ -1345,14 +1492,14 @@ public abstract class MojoBase extends AbstractMojo {
      *
      * @param artifactPath The path to the artifact to install.
      * @param pomPath The path to the pom to install with it.
-     * @param gameVersion The game version.
+     * @param exactVersion The version of the artifact.
      * @throws ArtifactInstallationException If something goes wrong.
      */
     @Deprecated
-    private void installViaCopy(Path artifactPath, Path pomPath, String gameVersion) throws ArtifactInstallationException {
-        Path basePath = Paths.get(this.localRepository.getBasedir(), "ca", "bkaw", "paper-nms", gameVersion + "-SNAPSHOT");
+    private void installViaCopy(Path artifactPath, Path pomPath, String exactVersion) throws ArtifactInstallationException {
+        Path basePath = Paths.get(this.localRepository.getBasedir(), "ca", "bkaw", "paper-nms", exactVersion);
 
-        String artifactName = "paper-nms-" + gameVersion + "-SNAPSHOT";
+        String artifactName = "paper-nms-" + exactVersion;
         Path repoArtifactPath = basePath.resolve(artifactName + ".jar");
         Path repoPomPath = basePath.resolve(artifactName + ".pom");
 
