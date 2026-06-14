@@ -6,13 +6,6 @@ This plugin will both create the mapped paper dependency and install it to your 
 > [!NOTE]
 > This is an unofficial plugin. You probably want to use Gradle and the officially supported [paperweight-userdev](https://github.com/PaperMC/paperweight-test-plugin) plugin instead. Do not ask PaperMC for support regarding this plugin. Instead, direct message `alvinn8` on discord and I will try to help you.
 
-## How to update to 26.1.1
-The latest snapshot release of `paper-nms-maven-plugin` supports Paper 26.1.1. However, the way the version is specified may change soon to avoid the `-SNAPSHOT` suffix.
-
-**To use 26.1.1 do the following:**
-
-Update paper-nms-maven-plugin to `1.4.11-SNAPSHOT` and change the version of the `paper-nms` dependency to `26.1.1.build.14-alpha-SNAPSHOT`. Replace `build.14-alpha` with the build you want to use (probably the latest).
-
 ## Usage (IntelliJ)
 1. Add `.paper-nms` to your `.gitignore`.
 
@@ -33,41 +26,33 @@ Update paper-nms-maven-plugin to `1.4.11-SNAPSHOT` and change the version of the
         <plugin>
             <groupId>ca.bkaw</groupId>
             <artifactId>paper-nms-maven-plugin</artifactId>
-            <version>1.4.10</version>
-            <executions>
-                <execution>
-                    <phase>process-classes</phase>
-                    <goals>
-                        <goal>remap</goal>
-                    </goals>
-                </execution>
-            </executions>
+            <version>1.5-SNAPSHOT</version>
         </plugin>
         ...
     </plugins>
 </build>
 ```
 
-> [!NOTE]
-> If you do not need to support Spigot and only 1.20.5+, then you can remove the `executions` part. Please see the section on [Mojang mappings in runtime on Paper 1.20.5+](#mojang-mappings-in-runtime-on-paper-1205).
-
 3. Add the mojang mapped dependency to your `pom.xml`.
 ```xml
 <dependency>
     <groupId>ca.bkaw</groupId>
     <artifactId>paper-nms</artifactId>
-    <version>1.21.8-SNAPSHOT</version>
+    <version>[26.1.2.build.1, 26.1.2.build.9999)</version>
     <scope>provided</scope>
 </dependency>
 ```
 
-Change `1.21.8` to the desired version.
+- For snapshot versions, specify the version as `1.21.8-R0.1-SNAPSHOT`.
+- To use a specific build, specify the version as `26.1.2.build.70-stable`.
+- If you want to use the latest build for 26.1.2, you can use a version range like `[26.1.2.build.1, 26.1.2.build.9999)` to always use the latest build of 26.1.2.
+- If you want to use the latest build of the latest version (not recommended because Minecraft may have breaking changes) you can use a range without an upper bound such as `[26.1.2,)` to always use the latest build of 26.1.2 or higher.
 
 4. Reload the project.
 
 ![Press the "Load Maven Changes" button](docs/img/step-3.png)
 
-A `Cannot resolve ca.bkaw:paper-nms:1.21.8-SNAPSHOT` message is expected.
+A `Cannot resolve ca.bkaw:paper-nms:version` message is expected.
 
 5. To create the missing dependency, run `init`.
 ![Instructions for running the paper-nms:init maven goal](docs/img/step-4.png)
@@ -75,64 +60,30 @@ For arrow (4), double-click `paper-nms:init` to run it.
 
 6. Wait for `init` to finish and a `BUILD SUCCESS` message should appear. The `paper-nms` dependency should now exist.
 
-7. Done! Your project should now have a Mojang mapped paper dependency, and when you build you project (for example with `mvn package`) the artifact will be remapped back to spigot mappings.
+7. Done! Your project should now have a Mojang mapped paper dependency.
 
-## Mojang mappings in runtime on Paper 1.20.5+
-Paper 1.20.5+ uses a Mojang-mapped runtime instead of using Spigot mappings in runtime. If you want to support Spigot you can continue to use the `paper-nms-maven-plugin` like before.
+## Usage on versions before Paper 1.20.5 / Spigot support
+Before Paper 1.20.5 the runtime mappings were Spigot mappings on Paper servers. To use NMS on versions before Paper 1.20.5, you must configure `paper-nms-maven-plugin` to remap your plugin back to Spigot mappings.
 
-If you are targeting Paper and do not care about Spigot compatibility, you can disable remapping of your plugin back to Spigot mappings. To do so, add the following to your `pom.xml`:
+If you are using 1.21 and need to support Spigot servers, you also need to remap to Spigot mappings.
 
-```xml
-<plugin>
-    <groupId>org.apache.maven.plugins</groupId>
-    <artifactId>maven-jar-plugin</artifactId>
-    <version>3.4.1</version>
-    <configuration>
-        <archive>
-            <manifestEntries>
-                <paperweight-mappings-namespace>mojang</paperweight-mappings-namespace>
-            </manifestEntries>
-        </archive>
-    </configuration>
-</plugin>
-```
-and remove the `executions` part of the `paper-nms-maven-plugin` plugin.
+To remap your plugin back to Spigot mappings, add the following to your `pom.xml`:
 
 ```diff
  <plugin>
      <groupId>ca.bkaw</groupId>
      <artifactId>paper-nms-maven-plugin</artifactId>
-     <version>1.4.10</version>
--    <executions>
--        <execution>
--            <phase>process-classes</phase>
--            <goals>
--                <goal>remap</goal>
--            </goals>
--        </execution>
--    </executions>
+     <version>1.5-SNAPSHOT</version>
++    <executions>
++        <execution>
++            <phase>process-classes</phase>
++            <goals>
++                <goal>remap</goal>
++            </goals>
++        </execution>
++    </executions>
  </plugin>
  ```
-
-## Troubleshooting: `remap failed: Duplicate key`
-Delete the file `.paper-nms/classes.json` and try again.
-
-## Usage with NMS modules that depend on each other
-
-If you have multiple modules that use NMS that depend on each other and that will be shaded into one jar, the plugin needs to be configured in a different way.
-
-> Note that this only applies if you have multiple NMS modules that __depend on each other__ and that will __shade each other__.
-
-Let's say you have two modules, `api` and `plugin`. Both of these modules use NMS. `api` has an interface that uses NMS types, and `plugin` implements this interface. The `plugin` module shades the `api` module.
-
-To use the plugin with this setup it needs to remap the resulting shaded jar file instead of remapping classes.
-
-1. In the `api` module, remove the executions part of the plugin configuration so that it doesn't remap that module.
-2. In the `plugin` module, change the remap goal to run during the `package` phase instead of `process-classes`, and make sure the paper-nms-maven-plugin is located __after__ the maven-shade-plugin.
-
-This way the plugin will remap the jar file after it has been shaded, and all shaded dependencies will also be remapped.
-
-See [issue #16](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/16) (Closed) for more information.
 
 ## Usage with paper forks
 You can specify a custom dev bundle to use NMS with paper forks.
@@ -157,9 +108,6 @@ This is done by configuring the plugin as follows.
             <artifact>
                 <groupId>com.example.paperfork</groupId>
                 <artifactId>dev-bundle</artifactId>
-                <version>${gameVersion}</version>
-                <!-- ${gameVersion} will be replaced with the game version to use.
-                     paper-nms-maven-plugin will take care of the '-R0.1-SNAPSHOT' suffix handling. -->
             </artifact>
         </devBundle>
     </configuration>
@@ -170,19 +118,42 @@ This is done by configuring the plugin as follows.
         <!-- Custom dev bundles get the group id ca.bkaw.nms instead of just ca.bkaw -->
         <groupId>ca.bkaw.nms</groupId>
         <artifactId>forktest-nms</artifactId> <!-- Note that this is forktest-nms -->
-        <version>1.21.8-SNAPSHOT</version>
+        <version>[26.1.2.build.1, 26.1.2.build.9999)</version>
         <scope>provided</scope>
     </dependency>
 </dependencies>
 ```
 
-Run `paper-nms:init`. The `paper-nms-maven-plugin` will downloading the dev bundle from the specified repository and generate the dependency.
+The version you specify for the `forktest-nms` dependency will be the version of the dev-bundle used. You may use ranges or exact versions to specify the version as explained in the previous section.
+
+Run `paper-nms:init`. The `paper-nms-maven-plugin` will download the dev bundle from the specified repository and generate the dependency.
 
 The repository can be omitted and the dev bundle will be fetched from maven local.
 
 It is also possible to omit the `url` from the `repository` tag if you already have defined a repository with the same `id` in the `repositories` tag of your pom.xml.
 
 If the repository requires authentication, prefer specifying the `id` of the repository and define the repository in the `repositories` tag of your pom.xml.
+
+## Usage with NMS modules that depend on each other
+
+If you have multiple modules that use NMS that depend on each other and that will be shaded into one jar, the plugin needs to be configured in a different way.
+
+> [!NOTE]
+> This only applies if you have multiple NMS modules that __depend on each other__ and that will __shade each other__. And only applies if you use remapping (before version 1.20.5 or for Spigot support).
+
+Let's say you have two modules, `api` and `plugin`. Both of these modules use NMS. `api` has an interface that uses NMS types, and `plugin` implements this interface. The `plugin` module shades the `api` module.
+
+To use the plugin with this setup it needs to remap the resulting shaded jar file instead of remapping classes.
+
+1. In the `api` module, remove the executions part of the plugin configuration so that it doesn't remap that module.
+2. In the `plugin` module, change the remap goal to run during the `package` phase instead of `process-classes`, and make sure the paper-nms-maven-plugin is located __after__ the maven-shade-plugin.
+
+This way the plugin will remap the jar file after it has been shaded, and all shaded dependencies will also be remapped.
+
+See [issue #16](https://github.com/Alvinn8/paper-nms-maven-plugin/issues/16) (Closed) for more information.
+
+## Troubleshooting: `remap failed: Duplicate key`
+Delete the file `.paper-nms/classes.json` and try again.
 
 ## Issues
 ### Only works for 1.17 and higher

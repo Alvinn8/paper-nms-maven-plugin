@@ -208,6 +208,12 @@ public abstract class MojoBase extends AbstractMojo {
             return userVersion.substring(1, buildIndex);
         }
 
+        // [26.1.2,) -> 26.1.2
+        if (userVersion.startsWith("[") && userVersion.contains(",") && userVersion.endsWith(")")) {
+            int commaIndex = userVersion.indexOf(",");
+            return userVersion.substring(1, commaIndex);
+        }
+
         throw new MojoFailureException("Unable to determine game version from version." +
             "\nUnable to determine game version from version: " + userVersion +
             "\n" +
@@ -509,6 +515,7 @@ public abstract class MojoBase extends AbstractMojo {
             if (versionRange.hasRestrictions()) {
                 // The user specified a version range. Retrieve the available versions
                 // and select the latest one that fits within the range.
+                getLog().info("Resolving dev bundle version range " + versionRange);
                 artifact.setVersionRange(versionRange);
 
                 List<ArtifactVersion> availableVersions;
