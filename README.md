@@ -26,7 +26,7 @@ This plugin will both create the mapped paper dependency and install it to your 
         <plugin>
             <groupId>ca.bkaw</groupId>
             <artifactId>paper-nms-maven-plugin</artifactId>
-            <version>1.5-SNAPSHOT</version>
+            <version>1.5</version>
         </plugin>
         ...
     </plugins>
@@ -73,7 +73,7 @@ To remap your plugin back to Spigot mappings, add the following to your `pom.xml
  <plugin>
      <groupId>ca.bkaw</groupId>
      <artifactId>paper-nms-maven-plugin</artifactId>
-     <version>1.5-SNAPSHOT</version>
+     <version>1.5</version>
 +    <executions>
 +        <execution>
 +            <phase>process-classes</phase>
