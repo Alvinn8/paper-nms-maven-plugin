@@ -33,8 +33,8 @@ public class RemapMojo extends MojoBase {
 
         Path inputPath = this.project.getArtifact().getFile().toPath();
 
-        String gameVersion = this.getGameVersion();
-        if (!gameVersion.startsWith("1.")) {
+        String userVersion = this.getUserVersion();
+        if (!userVersion.startsWith("1.")) {
             // We are probably on Minecraft 26.1.1 or newer.
             // No remapping is necessary because both Vanilla and Spigot now run with unobfuscated bytecode.
             getLog().warn("Remapping is not supported for MC 26.1 and later.");
@@ -51,12 +51,14 @@ public class RemapMojo extends MojoBase {
             return;
         }
 
+        String gameVersion = this.getGameVersionFor(userVersion);
+
         Path cacheDirectory = this.getCacheDirectory().resolve(gameVersion);
-        Path mappingsPath = cacheDirectory.resolve("mappings_" + gameVersion + ".tiny");
+        Path mappingsPath = cacheDirectory.resolve("mappings.tiny");
         Path missingMappingsPath = Paths.get(mappingsPath + ".missing");
 
-        Path mappingsMojangPath = cacheDirectory.resolve("mappings_" + gameVersion + "_mojang.tiny");
-        Path mappingsSpigotPath = cacheDirectory.resolve("mappings_" + gameVersion + "_spigot.tiny");
+        Path mappingsMojangPath = cacheDirectory.resolve("mappings_mojang.tiny");
+        Path mappingsSpigotPath = cacheDirectory.resolve("mappings_spigot.tiny");
 
         if (Files.exists(mappingsMojangPath) != Files.exists(mappingsSpigotPath)) {
             // One of the files is missing, delete the mappings and initialize again

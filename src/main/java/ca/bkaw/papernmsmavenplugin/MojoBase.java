@@ -172,6 +172,13 @@ public abstract class MojoBase extends AbstractMojo {
         );
     }
 
+    /**
+     * Identify the game version from the version the user has specified.
+     *
+     * @param userVersion The version or version range that the user has specified.
+     * @return The game version.
+     * @throws MojoFailureException If the version format is not supported.
+     */
     public String getGameVersionFor(String userVersion) throws MojoFailureException {
         // 1.21.9-R0.1-SNAPSHOT -> 1.21.9
         if (userVersion.endsWith("-R0.1-SNAPSHOT")) {
@@ -216,38 +223,6 @@ public abstract class MojoBase extends AbstractMojo {
             "\nhttps://github.com/Alvinn8/paper-nms-maven-plugin/issues" +
             "\n"
         );
-    }
-
-    /**
-     * Get the game version the user desires to use for this project.
-     *
-     * @return The game version.
-     * @throws MojoFailureException If no version is found.
-     * @deprecated Use #getVersion() instead.
-     */
-    @Deprecated
-    public String getGameVersion() throws MojoFailureException {
-        for (Object object : this.project.getDependencies()) {
-            Dependency dependency = (Dependency) object;
-
-            if (this.getNmsGroupId().equals(dependency.getGroupId()) && this.devBundle.id.equals(dependency.getArtifactId())) {
-                String version = dependency.getVersion();
-                // Note: even though Paper does not use the "-R0.1-SNAPSHOT" suffix anymore for versions past MC 26.1,
-                // paper-nmv-maven-plugin still requires the "-SNAPSHOT" suffix in the dependency declaration.
-                return version.substring(0, version.length() - 9/* Number of characters for "-SNAPSHOT" */);
-            }
-        }
-        throw new MojoFailureException("Unable to find the version to use.\n" +
-            "Unable to find the version to use. Make sure you have the following dependency in your <dependencies> tag:" +
-            "\n" +
-            "\n<dependency>" +
-            "\n    <groupId>"+ this.getNmsGroupId() +"</groupId>" +
-            "\n    <artifactId>"+ this.devBundle.id +"</artifactId>" +
-            "\n    <version>1.21.8-SNAPSHOT</version>" +
-            "\n    <scope>provided</scope>" +
-            "\n</dependency>" +
-            "\n" +
-            "\n Replacing \"1.21.8\" with the desired version.");
     }
 
     // Utils
@@ -409,8 +384,11 @@ public abstract class MojoBase extends AbstractMojo {
         if (devBundleArtifact != null) {
             // Update the exact version with the concrete version that was resolved. If the
             // user version was a range, this is the specific build it resolved to.
-            exactVersion = devBundleArtifact.getVersion();
-            System.out.println("Resolved dev bundle version: " + exactVersion);
+            String resolvedVersion = devBundleArtifact.getVersion();
+            getLog().info("Resolved dev bundle version: " + resolvedVersion);
+            if (userVersion.startsWith("[")) {
+                exactVersion = resolvedVersion;
+            }
         }
 
         if (devBundleArtifact != null) {
@@ -419,8 +397,8 @@ public abstract class MojoBase extends AbstractMojo {
             this.extractDevBundle(paperclipPath, mappingsPath, devBundleArtifact, dependencyCoordinates, dependencyManagementCoordinates);
 
             getLog().info("Extracting server");
-            this.extractServerJar(cacheDirectory, mappedServerPath);
-        } else if (this.devBundle == DevBundle.PAPER_DEV_BUNDLE) {
+            this.extractServerJar(gameVersion, cacheDirectory, mappedServerPath);
+        } else if (this.devBundle == DevBundle.PAPER_DEV_BUNDLE && userVersion.startsWith("1.")) {
             // No dev-bundle exists for this version, let's create
             // mappings and map the jar manually.
 
@@ -443,7 +421,7 @@ public abstract class MojoBase extends AbstractMojo {
 
             getLog().info("Extracting paper");
             Path paperPath = cacheDirectory.resolve("paper.jar");
-            this.extractServerJar(cacheDirectory, paperPath);
+            this.extractServerJar(gameVersion, cacheDirectory, paperPath);
 
             getLog().info("Mapping paper jar");
             this.mapPaperJar(mappingsPath, paperPath, mappedServerPath);
@@ -508,18 +486,6 @@ public abstract class MojoBase extends AbstractMojo {
         );
     }
 
-    private static String replaceGameVersion(String artifactVersion, CharSequence gameVersion) {
-        // From Minecraft 26.1.1 onwards, Paper no longer uses the "-R0.1-SNAPSHOT" suffix.
-
-        String newArtifactVersion = artifactVersion.replace("${gameVersion}", gameVersion);
-
-        if ("1.".contentEquals(gameVersion.subSequence(0, 2))) {
-            newArtifactVersion += "-R0.1-SNAPSHOT";
-        } // else: We are on Paper 26.1.1 or newer. There is no custom suffix anymore.
-
-        return newArtifactVersion;
-    }
-
     /**
      * Resolve the dev-bundle containing useful files and get the path to it.
      *
@@ -529,7 +495,7 @@ public abstract class MojoBase extends AbstractMojo {
      * @return The resolved dev-bundle artifact, or null if no dev-bundle was found.
      */
     @Nullable
-    public Artifact resolveDevBundle(String userVersion) throws MojoExecutionException {
+    public Artifact resolveDevBundle(String userVersion) throws MojoExecutionException, MojoFailureException {
         List<ArtifactRepository> repositories = this.getDevBundleRepositories();
 
         // Try to find the version that the user specified. If an exact version was
@@ -568,12 +534,108 @@ public abstract class MojoBase extends AbstractMojo {
 
         try {
             this.artifactResolver.resolve(artifact, repositories, this.localRepository);
-        } catch (ArtifactResolutionException | ArtifactNotFoundException e) {
-            getLog().info("No dev bundle was found for version " + userVersion);
-            return null;
+            return artifact;
+        } catch (ArtifactResolutionException | ArtifactNotFoundException ignored) {
+            // Not found
         }
 
-        return artifact;
+        // Check if a custom dev bundle is used with the ${gameVersion} placeholder
+        if (this.devBundle.artifact.version != null && this.devBundle.artifact.version.contains("${gameVersion}")) {
+            String gameVersion = this.getGameVersionFor(userVersion);
+            String version = this.devBundle.artifact.version.replace("${gameVersion}", gameVersion);
+            artifact = this.getDevBundleArtifact(version);
+            try {
+                this.artifactResolver.resolve(artifact, repositories, this.localRepository);
+                getLog().warn("Resolved dev bundle using ${gameVersion} placeholder.");
+                getLog().warn("Please remove the <version> from your dev bundle configuration and specify the version directly in the dependency version, so that the version is exactly the");
+                getLog().warn("version directly in the dependency version.");
+                getLog().warn("");
+                getLog().warn("Remove:");
+                getLog().warn("");
+                getLog().warn("<configuration>");
+                getLog().warn("    <devBundle>");
+                getLog().warn("        <id>"+ this.devBundle.id +"</id>");
+                getLog().warn("        ...");
+                getLog().warn("        <artifact>");
+                getLog().warn("            <groupId>"+ this.devBundle.artifact.groupId +"</groupId>");
+                getLog().warn("            <artifactId>"+ this.devBundle.artifact.artifactId +"</artifactId>");
+                getLog().warn("\33[0;31m REMOVE:    <version>"+ this.devBundle.artifact.version +"</version>\33[0m");
+                getLog().warn("        </artifact>");
+                getLog().warn("    </devBundle>");
+                getLog().warn("</configuration>");
+                getLog().warn("");
+                getLog().warn("and change:");
+                getLog().warn("");
+                getLog().warn("     <dependency>");
+                getLog().warn("         <groupId>" + this.getNmsGroupId() + "</groupId>");
+                getLog().warn("         <artifactId>" + this.devBundle.id + "</artifactId>");
+                getLog().warn("\33[0;31m OLD:    <version>" + userVersion + "</version>\33[0m");
+                getLog().warn("\33[0;32m NEW:    <version>" + version + "</version>\33[0m");
+                getLog().warn("         <scope>provided</scope>");
+                getLog().warn("     </dependency>");
+
+                return artifact;
+            } catch (ArtifactResolutionException | ArtifactNotFoundException ignored) {
+                // Not found
+            }
+        }
+
+        // Check the old format where -SNAPSHOT was appended to an exact version
+        if (userVersion.endsWith("-SNAPSHOT")) {
+            String versionWithoutSnapshot = userVersion.substring(0, userVersion.length() - "-SNAPSHOT".length());
+            artifact = this.getDevBundleArtifact(versionWithoutSnapshot);
+            try {
+                this.artifactResolver.resolve(artifact, repositories, this.localRepository);
+                getLog().warn("Resolved dev bundle using old version format with -SNAPSHOT suffix.");
+                getLog().warn("Please update your version to not include the -SNAPSHOT suffix.");
+                getLog().warn("");
+                getLog().warn("Please change:");
+                getLog().warn("");
+                getLog().warn("     <dependency>");
+                getLog().warn("         <groupId>" + this.getNmsGroupId() + "</groupId>");
+                getLog().warn("         <artifactId>" + this.devBundle.id + "</artifactId>");
+                getLog().warn("\33[0;31m OLD:    <version>" + userVersion + "</version>\33[0m");
+                getLog().warn("\33[0;32m NEW:    <version>" + versionWithoutSnapshot + "</version>\33[0m");
+                getLog().warn("         <scope>provided</scope>");
+                getLog().warn("     </dependency>");
+                getLog().warn("");
+
+                return artifact;
+            } catch (ArtifactResolutionException | ArtifactNotFoundException ignored) {
+                // Not found
+            }
+        }
+
+        // Check the old format where the version is gameVersion-SNAPSHOT
+        if (userVersion.endsWith("-SNAPSHOT")) {
+            String gameVersion = this.getGameVersionFor(userVersion);
+            String version = gameVersion + "-R0.1-SNAPSHOT";
+            artifact = this.getDevBundleArtifact(version);
+            try {
+                this.artifactResolver.resolve(artifact, repositories, this.localRepository);
+                getLog().warn("Resolved dev bundle using old version format.");
+                getLog().warn("Please update your version to include the \"R0.1\" so that the version is exactly the");
+                getLog().warn("same as the versions used in the dev bundles.");
+                getLog().warn("");
+                getLog().warn("Please change:");
+                getLog().warn("");
+                getLog().warn("     <dependency>");
+                getLog().warn("         <groupId>" + this.getNmsGroupId() + "</groupId>");
+                getLog().warn("         <artifactId>" + this.devBundle.id + "</artifactId>");
+                getLog().warn("\33[0;31m OLD:    <version>" + userVersion + "</version>\33[0m");
+                getLog().warn("\33[0;32m NEW:    <version>" + version + "</version>\33[0m");
+                getLog().warn("         <scope>provided</scope>");
+                getLog().warn("     </dependency>");
+                getLog().warn("");
+
+                return artifact;
+            } catch (ArtifactResolutionException | ArtifactNotFoundException ignored) {
+                // Not found
+            }
+        }
+
+        getLog().info("No dev bundle was found for version " + userVersion);
+        return null;
     }
 
     /**
@@ -1084,12 +1146,13 @@ public abstract class MojoBase extends AbstractMojo {
      * <p>This method will also clean up the directories that paperclip generate in
      * the cache folder.</p>
      *
+     * @param gameVersion The game version.
      * @param cacheDirectory The cache directory.
      * @param serverPath The path to put the extracted server jar.
      * @throws MojoExecutionException If something goes wrong.
      * @throws MojoFailureException If something goes wrong.
      */
-    public void extractServerJar(Path cacheDirectory, Path serverPath) throws MojoExecutionException, MojoFailureException {
+    public void extractServerJar(String gameVersion, Path cacheDirectory, Path serverPath) throws MojoExecutionException, MojoFailureException {
         String javaExecutable;
         Path bin = Paths.get(System.getProperty("java.home"), "bin");
         Path javaPath = bin.resolve("java");
@@ -1180,7 +1243,7 @@ public abstract class MojoBase extends AbstractMojo {
             }
         }
         if (extractedServerPath == null) {
-            extractedServerPath = cacheDirectory.resolve("cache").resolve("patched.jar");
+            extractedServerPath = cacheDirectory.resolve("cache").resolve("patched_"+ gameVersion +".jar");
             if (!Files.exists(extractedServerPath)) {
                 throw new MojoExecutionException("Unable to find the patched server jar");
             }
